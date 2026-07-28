@@ -8,7 +8,7 @@ import {
   Timestamp,
   where,
 } from "firebase/firestore";
-import { db } from "./firebase";
+import { db, auth } from "./firebase";
 import { calculateBookingFee } from "./fees";
 import { generateBookingNumber, generateLookupToken } from "./crypto";
 import { isBlockingSlot, isExpiredPendingPayment } from "./conflict";
@@ -16,6 +16,12 @@ import { slotDocId, otherSlot } from "./slotKey";
 import { PENDING_PAYMENT_TIMEOUT_MS } from "./constants";
 import { logBookingEvent } from "./events";
 import type { BookingStatus, Slot } from "./types";
+
+function requireAdminEmail(): string {
+  const email = auth.currentUser?.email;
+  if (!email) throw new Error("NOT_AUTHENTICATED");
+  return email;
+}
 
 export interface CreateBookingInput {
   name: string;
@@ -165,5 +171,54 @@ export async function submitUtr(bookingId: string, utr: string): Promise<void> {
     });
     tx.update(slotRef, { status: "pending-verification" });
     logBookingEvent(tx, bookingId, "PAYMENT_SUBMITTED", "pending-payment", "pending-verification", "user");
+  });
+}
+
+export async function approveBooking(bookingId: string): Promise<void> {
+  const adminEmail = requireAdminEmail();
+  const bookingRef = doc(db, "bookings", bookingId);
+  const now = Date.now();
+  const expiresAt = Timestamp.fromMillis(now + PENDING_PAYMENT_TIMEOUT_MS);
+
+  await runTransaction(db, async (tx) => {
+    const snap = await tx.get(bookingRef);
+    if (!snap.exists()) throw new Error("NOT_FOUND");
+    const data = snap.data();
+    if (data.status !== "pending-approval") throw new Error("INVALID_STATE");
+    const slotRef = doc(db, "bookingSlots", slotDocId(data.venue, data.date, data.slot));
+
+    tx.update(bookingRef, {
+      status: "pending-payment",
+      expiresAt,
+      approvedBy: adminEmail,
+      approvedAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+    tx.update(slotRef, { status: "pending-payment", expiresAt });
+    logBookingEvent(tx, bookingId, "APPROVED", "pending-approval", "pending-payment", adminEmail);
+  });
+}
+
+export async function rejectApproval(bookingId: string): Promise<void> {
+  const adminEmail = requireAdminEmail();
+  const bookingRef = doc(db, "bookings", bookingId);
+
+  await runTransaction(db, async (tx) => {
+    const snap = await tx.get(bookingRef);
+    if (!snap.exists()) throw new Error("NOT_FOUND");
+    const data = snap.data();
+    if (data.status !== "pending-approval") throw new Error("INVALID_STATE");
+    const slotRef = doc(db, "bookingSlots", slotDocId(data.venue, data.date, data.slot));
+
+    tx.update(bookingRef, {
+      status: "cancelled",
+      cancelledBy: "admin",
+      rejectedBy: adminEmail,
+      rejectedAt: serverTimestamp(),
+      cancelledAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+    tx.update(slotRef, { status: "cancelled" });
+    logBookingEvent(tx, bookingId, "REJECTED", "pending-approval", "cancelled", adminEmail);
   });
 }
