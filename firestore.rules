@@ -8,11 +8,14 @@ service cloud.firestore {
 
     // Shared field checks for bookingSlots/bookings create. expiresAt is bounded to at most
     // ~20 minutes out (the 15-minute payment window plus slack) so a forged create can't
-    // squat a slot indefinitely by claiming an artificially distant expiry.
+    // squat a slot indefinitely by claiming an artificially distant expiry. occupiedSince
+    // just has to be a real server timestamp — it's not a secret, only a correlation key the
+    // admin sweep uses to avoid stomping a newer booking (see bookingSlots' comment below).
     function isCreateFieldsValid() {
       let d = request.resource.data;
       return d.status in ['pending-payment', 'pending-approval']
         && d.venue is string && d.date is string && d.slot in ['Morning', 'Evening']
+        && d.occupiedSince == request.time
         && (
           (d.status == 'pending-approval' && d.expiresAt == null)
           || (
@@ -24,15 +27,18 @@ service cloud.firestore {
         );
     }
 
-    // Public availability layer only: venue/date/slot/status/expiresAt. Deliberately carries
-    // NO pointer (bookingId, lookupToken, bookingNumber) to the private bookings record —
-    // this collection is publicly listable (the calendar needs it), and Firestore rules
-    // cannot redact individual fields from a list response. Any pointer field here would let
-    // anyone who lists this collection harvest it and read full PII via bookings' public
-    // get-by-id, and would also let them forge the self-cancel transition on someone else's
-    // booking (see bookings/{bookingId} below) since that rule only checks the transition
-    // shape, not identity — the actual authorization boundary is "you can't discover the ID
-    // in the first place."
+    // Public availability layer only: venue/date/slot/status/expiresAt/occupiedSince.
+    // Deliberately carries NO pointer (bookingId, lookupToken, bookingNumber) to the private
+    // bookings record — this collection is publicly listable (the calendar needs it), and
+    // Firestore rules cannot redact individual fields from a list response. Any pointer field
+    // here would let anyone who lists this collection harvest it and read full PII via
+    // bookings' public get-by-id, and would also let them forge the self-cancel transition on
+    // someone else's booking (see bookings/{bookingId} below) since that rule only checks the
+    // transition shape, not identity — the actual authorization boundary is "you can't
+    // discover the ID in the first place." occupiedSince is NOT such a pointer — it's a plain
+    // timestamp matching the current occupant's own createdAt, used only so the admin sweep
+    // (Task 20) can verify it's syncing the same occupancy episode rather than stomping a
+    // newer booking that has since legitimately reclaimed this slot.
     // Expiring a stale pending-payment slot (status -> expired) is an admin-only sweep (run
     // from the authenticated admin panel, which already holds bookingIds via its own
     // privileged bookings.list() access) — there is no public write path for this transition,

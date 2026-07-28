@@ -196,11 +196,14 @@ service cloud.firestore {
 
     // Shared field checks for bookingSlots/bookings create. expiresAt is bounded to at most
     // ~20 minutes out (the 15-minute payment window plus slack) so a forged create can't
-    // squat a slot indefinitely by claiming an artificially distant expiry.
+    // squat a slot indefinitely by claiming an artificially distant expiry. occupiedSince
+    // just has to be a real server timestamp — it's not a secret, only a correlation key the
+    // admin sweep uses to avoid stomping a newer booking (see bookingSlots' comment below).
     function isCreateFieldsValid() {
       let d = request.resource.data;
       return d.status in ['pending-payment', 'pending-approval']
         && d.venue is string && d.date is string && d.slot in ['Morning', 'Evening']
+        && d.occupiedSince == request.time
         && (
           (d.status == 'pending-approval' && d.expiresAt == null)
           || (
@@ -212,15 +215,18 @@ service cloud.firestore {
         );
     }
 
-    // Public availability layer only: venue/date/slot/status/expiresAt. Deliberately carries
-    // NO pointer (bookingId, lookupToken, bookingNumber) to the private bookings record —
-    // this collection is publicly listable (the calendar needs it), and Firestore rules
-    // cannot redact individual fields from a list response. Any pointer field here would let
-    // anyone who lists this collection harvest it and read full PII via bookings' public
-    // get-by-id, and would also let them forge the self-cancel transition on someone else's
-    // booking (see bookings/{bookingId} below) since that rule only checks the transition
-    // shape, not identity — the actual authorization boundary is "you can't discover the ID
-    // in the first place."
+    // Public availability layer only: venue/date/slot/status/expiresAt/occupiedSince.
+    // Deliberately carries NO pointer (bookingId, lookupToken, bookingNumber) to the private
+    // bookings record — this collection is publicly listable (the calendar needs it), and
+    // Firestore rules cannot redact individual fields from a list response. Any pointer field
+    // here would let anyone who lists this collection harvest it and read full PII via
+    // bookings' public get-by-id, and would also let them forge the self-cancel transition on
+    // someone else's booking (see bookings/{bookingId} below) since that rule only checks the
+    // transition shape, not identity — the actual authorization boundary is "you can't
+    // discover the ID in the first place." occupiedSince is NOT such a pointer — it's a plain
+    // timestamp matching the current occupant's own createdAt, used only so the admin sweep
+    // (Task 20) can verify it's syncing the same occupancy episode rather than stomping a
+    // newer booking that has since legitimately reclaimed this slot.
     // submitUtr's transition (pending-payment -> pending-verification, the user claiming
     // they've paid) needs a narrowly-scoped public exception: the payment window must not
     // have already passed (resource.data.expiresAt > request.time — enforced here, not just
@@ -386,7 +392,7 @@ git commit -m "Add Firestore security rules for hall booking collections"
   - `type BookingStatus = "pending-approval" | "pending-payment" | "pending-verification" | "confirmed" | "cancelled" | "expired"`
   - `type Venue = "Executives Club Community Hall" | "Shopping Complex Room" | "Multi Purpose Room" | string` (string covers "Other" free text)
   - `type Slot = "Morning" | "Evening"`
-  - `interface BookingSlotDoc { venue: Venue; date: string; slot: Slot; status: BookingStatus; expiresAt: Timestamp | null }` — public availability layer only, no pointer to the private record (see Task 2's security-review note)
+  - `interface BookingSlotDoc { venue: Venue; date: string; slot: Slot; status: BookingStatus; expiresAt: Timestamp | null; occupiedSince: Timestamp }` — public availability layer only, no pointer to the private record (see Task 2's security-review note); `occupiedSince` is a plain timestamp (not a pointer) letting the admin sweep (Task 20) verify it's syncing the same occupancy episode
   - `interface BookingDoc extends BookingSlotDoc { bookingNumber: string; lookupToken: string; name: string; empId: string; phone: string; email: string; purpose: string; duration: string; utr: string | null; amount: number; isMember: boolean; cancelledBy: "user" | "admin" | null; approvedBy: string | null; approvedAt: Timestamp | null; paymentVerifiedBy: string | null; paymentVerifiedAt: Timestamp | null; rejectedBy: string | null; rejectedAt: Timestamp | null; cancelledAt: Timestamp | null; createdAt: Timestamp; updatedAt: Timestamp }`
   - `interface BookingLookupDoc { bookingId: string }` — doc ID is the lookupToken itself
   - `VENUES: { name: string; feeMember: number; feeNonMember: number }[]`
@@ -411,12 +417,17 @@ export type Slot = "Morning" | "Evening";
 
 // Public availability layer only (see firestore.rules) — deliberately carries no pointer to
 // the private bookings record, since this collection is publicly listable for the calendar.
+// occupiedSince is NOT a pointer to PII — it's a plain timestamp (matching the current
+// occupant's own createdAt, set atomically in the same transaction) used only so the admin
+// sweep (Task 20) can verify it's still syncing the SAME occupancy episode it thinks it is,
+// rather than stomping a newer booking that has since legitimately reclaimed this slot.
 export interface BookingSlotDoc {
   venue: string;
   date: string;
   slot: Slot;
   status: BookingStatus;
   expiresAt: Timestamp | null;
+  occupiedSince: Timestamp;
 }
 
 export interface BookingDoc extends BookingSlotDoc {
@@ -1009,12 +1020,19 @@ export async function createBooking(input: CreateBookingInput): Promise<CreateBo
         ? Timestamp.fromMillis(now + PENDING_PAYMENT_TIMEOUT_MS)
         : null;
 
+    // occupiedSince and createdAt intentionally use the same serverTimestamp() sentinel and
+    // commit atomically in this same transaction, so they resolve to the identical server-set
+    // value — that's what lets the admin sweep (Task 20) later verify "is this bookingSlots
+    // doc still the same occupancy episode as this specific (possibly stale) booking?" without
+    // bookingSlots needing to store any actual pointer to the booking.
+    const createdAt = serverTimestamp();
     const slotDoc = {
       venue: input.venue,
       date: input.date,
       slot: input.slot,
       status: resolvedStatus,
       expiresAt,
+      occupiedSince: createdAt,
     };
     const bookingDoc = {
       ...slotDoc,
@@ -1037,7 +1055,7 @@ export async function createBooking(input: CreateBookingInput): Promise<CreateBo
       rejectedBy: null,
       rejectedAt: null,
       cancelledAt: null,
-      createdAt: serverTimestamp(),
+      createdAt,
       updatedAt: serverTimestamp(),
     };
     tx.set(slotRef, slotDoc);
@@ -1296,6 +1314,8 @@ git commit -m "Add verifyPayment and rejectPayment admin transactions"
 
 - [ ] **Step 1: Add all three functions to `src/lib/hall/transactions.ts`**
 
+**Design note (security-review correction):** `cancelBookingSelf` does NOT also update the matching `bookingSlots` doc, unlike every other transition in this file. It's called anonymously (from the public status page), and `bookingSlots`' deterministic ID (`venue|date|slot`) is fully public/guessable — there is no secret involved, so a rule permitting "confirmed/pending-payment → cancelled" there for anyone would let a stranger free (or otherwise tamper with) a slot they have no connection to, just by knowing its public venue/date/slot. `bookingSlots` sync for this case is instead handled by the admin-side sweep (Task 20's `AllBookingsTab`, extended to also cover self-cancelled bookings, not just expired ones — the same pattern already used for stale-payment expiry). This is safe, not just convenient: until the sweep runs, `bookingSlots` still shows the slot as taken, so it can't be raced by a new booking in the interim — a self-cancelled slot is briefly unavailable for rebooking rather than vulnerable to being stomped by an unrelated write.
+
 ```typescript
 export async function cancelBookingSelf(bookingId: string): Promise<void> {
   const bookingRef = doc(db, "bookings", bookingId);
@@ -1308,7 +1328,6 @@ export async function cancelBookingSelf(bookingId: string): Promise<void> {
     if (status !== "confirmed" && status !== "pending-payment") {
       throw new Error("INVALID_STATE");
     }
-    const slotRef = doc(db, "bookingSlots", slotDocId(data.venue, data.date, data.slot));
 
     tx.update(bookingRef, {
       status: "cancelled",
@@ -1316,7 +1335,6 @@ export async function cancelBookingSelf(bookingId: string): Promise<void> {
       cancelledAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     });
-    tx.update(slotRef, { status: "cancelled" });
     logBookingEvent(tx, bookingId, "CANCELLED", status, "cancelled", "user");
   });
 }
@@ -1364,7 +1382,7 @@ export async function expireStaleBooking(bookingId: string): Promise<void> {
 
 - [ ] **Step 2: Manual verification checklist (Task 22)**
 
-Self-cancel a `confirmed` booking → `cancelled`, `cancelledBy: "user"`. Attempt self-cancel on a `pending-approval` booking → throws `INVALID_STATE`. Admin force-cancels a `pending-verification` booking → `cancelled`, `cancelledBy: "admin"`. Call `expireStaleBooking` on a booking whose `expiresAt` has passed → `expired`; calling it again is a no-op (idempotent, matches the rules' single-transition guard).
+Self-cancel a `confirmed` booking (as an unauthenticated user, matching real usage from the status page) → `bookings/{id}` flips to `cancelled`, `cancelledBy: "user"`; confirm `bookingSlots` for that slot is *unchanged* (still shows the pre-cancel status) until the admin sweep runs — this is expected, not a bug. Attempt self-cancel on a `pending-approval` booking → throws `INVALID_STATE`. Admin force-cancels a `pending-verification` booking → `cancelled`, `cancelledBy: "admin"`, and confirm this one *does* update `bookingSlots` immediately (admin writes aren't deferred to a sweep). Call `expireStaleBooking` on a booking whose `expiresAt` has passed → `expired`; calling it again is a no-op (idempotent, matches the rules' single-transition guard).
 
 - [ ] **Step 3: Commit**
 
@@ -2651,8 +2669,10 @@ git commit -m "Add Pending Approval and Pending Verification admin tabs"
 - Modify: `src/routes/admin.tsx`
 
 **Interfaces:**
-- Consumes: `cancelBookingAdmin`, `expireStaleBooking` (Task 10), `isExpiredPendingPayment` (Task 5), `BlockedDateDoc` (Task 3).
-- Produces: working `AllBookingsTab` (including the admin-side stale-expiry sweep, see Task 12's design note for why this replaced a client-side calendar write) and `BlockedDatesTab`.
+- Consumes: `cancelBookingAdmin`, `expireStaleBooking` (Task 10), `isExpiredPendingPayment` (Task 5), `slotDocId` (Task 3), `BlockedDateDoc` (Task 3).
+- Produces: working `AllBookingsTab` (including two admin-side sweeps — stale-payment expiry and self-cancelled `bookingSlots` sync, see Task 12/10's design notes for why both moved here instead of being written by their originating, unauthenticated caller) and `BlockedDatesTab`.
+
+**Why the two sweeps aren't symmetric:** the expiry sweep is safe to blindly re-run — `expireStaleBooking`'s own transaction re-checks the booking's *current* status fresh each time, and once a booking is `expired` it can never match `isExpiredPendingPayment` again, so the outer loop naturally stops retrying it. `cancelled`, unlike `expired`, is a status every reload will match forever for every historically cancelled booking — so a naive blind write here *would* eventually stomp a different, newer booking that has since legitimately reclaimed the same `venue|date|slot` key (which can only happen after the first successful sync frees it — the very sweep this guards). The fix is `occupiedSince` (Task 3/6): only overwrite `bookingSlots` if its current `occupiedSince` still matches *this specific* stale booking's own `occupiedSince` — if it doesn't match, a different booking now legitimately owns that slot key, and the sweep must leave it alone.
 
 - [ ] **Step 1: Replace `AllBookingsTab` and `BlockedDatesTab` in `src/routes/admin.tsx`**
 
@@ -2667,16 +2687,32 @@ function AllBookingsTab() {
     const snap = await getDocs(collection(db, "bookings"));
     const loaded = snap.docs.map((d) => ({ ...(d.data() as BookingDoc), bookingId: d.id }));
 
-    // Admin-side stale-expiry sweep: the calendar deliberately no longer triggers this write
-    // itself (see Task 12), since doing so would have required bookingSlots to carry a
-    // bookingId pointer, which is a PII-leak risk once that collection is publicly listable.
-    // The admin panel already holds real bookingIds via its own privileged bookings.list()
-    // access, so it's the legitimate place to notice and flip stale bookings.
+    // Two admin-side sweeps, both syncing bookingSlots from state the admin panel already has
+    // authenticated access to.
     const now = Date.now();
     for (const b of loaded) {
       if (isExpiredPendingPayment(b.status, b.expiresAt, now)) {
+        // Stale-payment expiry: the calendar deliberately no longer triggers this write itself
+        // (see Task 12), since doing so would have required bookingSlots to carry a bookingId
+        // pointer, which is a PII-leak risk once that collection is publicly listable. Safe to
+        // blindly retry — expireStaleBooking re-checks the booking's live status, and once
+        // expired it can never match this branch's condition again.
         void expireStaleBooking(b.bookingId);
         b.status = "expired"; // optimistic local update so the UI doesn't wait for the write
+      } else if (b.status === "cancelled") {
+        // Self-cancel sync: cancelBookingSelf (Task 10) can't write bookingSlots itself, since
+        // it's called anonymously and bookingSlots' deterministic ID is public/guessable — a
+        // rule permitting that write for anyone would let a stranger free or tamper with a
+        // slot they have no connection to. The admin write below is authorized via isAdmin(),
+        // no new rule needed. Unlike expiry, "cancelled" matches forever on every reload, so
+        // this must verify occupiedSince still matches THIS booking before writing, or a
+        // stale sweep could stomp a different, newer booking that has since claimed the slot.
+        const slotRef = doc(db, "bookingSlots", slotDocId(b.venue, b.date, b.slot));
+        void getDoc(slotRef).then((slotSnap) => {
+          if (slotSnap.exists() && slotSnap.data().occupiedSince?.isEqual(b.occupiedSince)) {
+            void updateDoc(slotRef, { status: "cancelled" }).catch(() => {});
+          }
+        });
       }
     }
 
@@ -2776,9 +2812,10 @@ function BlockedDatesTab() {
 - [ ] **Step 2: Add the required imports at the top of `src/routes/admin.tsx`**
 
 ```typescript
-import { addDoc, deleteDoc, serverTimestamp } from "firebase/firestore";
+import { addDoc, deleteDoc, doc, getDoc, serverTimestamp, updateDoc } from "firebase/firestore";
 import { cancelBookingAdmin, expireStaleBooking } from "@/lib/hall/transactions";
 import { isExpiredPendingPayment } from "@/lib/hall/conflict";
+import { slotDocId } from "@/lib/hall/slotKey";
 import { VENUES } from "@/lib/hall/constants";
 import type { BlockedDateDoc } from "@/lib/hall/types";
 ```
@@ -2960,4 +2997,6 @@ git commit -m "Document hall booking deployment steps and finalize Firebase proj
 Every task from 6 onward in this document already reflects these corrections; Tasks 1–5's already-committed code and this plan document were both amended together rather than left inconsistent.
 
 **A third correction, found by a second automated background security review (of the Task 6–10 commit) after Tasks 1–10 were implemented in code:** the `firestore.rules` written in Task 2 had no update exception at all for `submitUtr`'s transition (`pending-payment → pending-verification`, the user claiming they've paid). As written, this meant either the entire payment-submission step of the booking flow would have been silently rejected by Firestore in production (rules fail closed — nothing in the client code would have caught this until real-world testing against a deployed project), or, had a looser rule been added reactively without care, a client could have smuggled in unrelated field changes (e.g. `amount`, `paymentVerifiedBy`) disguised as a UTR submission. Fixed with a narrowly-scoped exception: the payment window must not have already passed (`expiresAt > request.time`, checked in the rule itself — not only client-side, so a client can't bypass the 15-minute window by writing directly), `utr` must be a plausible string (≥6 characters, matching the client-side validation), and the diff is restricted to exactly `status`/`utr`/`updatedAt` on `bookings` and `status` on `bookingSlots`. This is applied retroactively to Task 2's rules text and its manual verification checklist (now 18 scenarios, up from 8) — a reminder that rules changes deserve the same scrutiny as the transaction code that depends on them, and that "no rule exists for this write" is just as much a bug as "the rule is too permissive."
+
+**A fourth correction, found by re-auditing rule coverage for every non-admin transaction after the third correction above (not by an external review this time):** the same class of bug existed for `cancelBookingSelf`'s `bookingSlots` mirror write — it's also called anonymously (from the public status page), and no rule permitted its `confirmed/pending-payment → cancelled` transition on `bookingSlots` either, so self-cancel would have failed atomically in production (the whole transaction rolls back, including the otherwise-valid `bookings` cancellation). Unlike `submitUtr`, this one *can't* simply get a matching public rule exception the same way: `bookingSlots`' deterministic ID (`venue|date|slot`) is fully public and guessable (unlike a `bookingId`), so a rule permitting anyone to write that transition there would let a total stranger free — or otherwise tamper with — a slot they have no connection to, just by knowing its public venue/date/slot. Fixed by removing the `bookingSlots` write from `cancelBookingSelf` entirely (it now only touches `bookings`, which *is* safely scoped by a hard-to-guess `bookingId`) and moving the sync to the admin-side sweep (Task 20), the same pattern already used for stale-payment expiry. This introduced a further subtlety the expiry sweep didn't have: `cancelled` is a permanent status that matches on *every* future reload, whereas `expired` naturally stops matching after the first successful sweep — so a naive cancelled-sync sweep could eventually stomp a different, newer booking that has since reclaimed the same slot key. Fixed by adding `occupiedSince` (Task 3/6) — a plain timestamp (not a pointer to PII) mirroring the current occupant's own `createdAt`, letting the sweep verify it's still syncing the same occupancy episode before writing. Every task from 3 onward that touches `BookingSlotDoc`, `createBooking`, or the Task 20 sweep reflects this; the previously-committed Tasks 3/6 code and this plan document were amended together.
 

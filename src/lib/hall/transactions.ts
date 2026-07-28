@@ -99,12 +99,19 @@ export async function createBooking(input: CreateBookingInput): Promise<CreateBo
         ? Timestamp.fromMillis(now + PENDING_PAYMENT_TIMEOUT_MS)
         : null;
 
+    // occupiedSince and createdAt intentionally use the same serverTimestamp() sentinel and
+    // commit atomically in this same transaction, so they resolve to the identical server-set
+    // value — that's what lets the admin sweep (Task 20) later verify "is this bookingSlots
+    // doc still the same occupancy episode as this specific (possibly stale) booking?" without
+    // bookingSlots needing to store any actual pointer to the booking.
+    const createdAt = serverTimestamp();
     const slotDoc = {
       venue: input.venue,
       date: input.date,
       slot: input.slot,
       status: resolvedStatus,
       expiresAt,
+      occupiedSince: createdAt,
     };
     const bookingDoc = {
       ...slotDoc,
@@ -127,7 +134,7 @@ export async function createBooking(input: CreateBookingInput): Promise<CreateBo
       rejectedBy: null,
       rejectedAt: null,
       cancelledAt: null,
-      createdAt: serverTimestamp(),
+      createdAt,
       updatedAt: serverTimestamp(),
     };
     tx.set(slotRef, slotDoc);
@@ -272,6 +279,17 @@ export async function rejectPayment(bookingId: string): Promise<void> {
 export async function cancelBookingSelf(bookingId: string): Promise<void> {
   const bookingRef = doc(db, "bookings", bookingId);
 
+  // This does NOT also update the matching bookingSlots doc, unlike every other transition
+  // in this file. cancelBookingSelf is called anonymously (from the public status page), and
+  // bookingSlots' deterministic ID (venue|date|slot) is fully public/guessable — there is no
+  // secret involved, so a Firestore rule permitting "confirmed/pending-payment -> cancelled"
+  // there for anyone would let a stranger free (or otherwise tamper with) a slot they have no
+  // connection to, just by knowing its public venue/date/slot. bookingSlots sync for this case
+  // is instead handled by the admin-side sweep (Task 20's AllBookingsTab), the same pattern
+  // already used for stale-payment expiry. This is safe, not just convenient: until the sweep
+  // runs, bookingSlots still shows the slot as taken, so it can't be raced by a new booking in
+  // the interim — a self-cancelled slot is briefly unavailable for rebooking rather than
+  // vulnerable to being stomped by an unrelated write.
   await runTransaction(db, async (tx) => {
     const snap = await tx.get(bookingRef);
     if (!snap.exists()) throw new Error("NOT_FOUND");
@@ -280,7 +298,6 @@ export async function cancelBookingSelf(bookingId: string): Promise<void> {
     if (status !== "confirmed" && status !== "pending-payment") {
       throw new Error("INVALID_STATE");
     }
-    const slotRef = doc(db, "bookingSlots", slotDocId(data.venue, data.date, data.slot));
 
     tx.update(bookingRef, {
       status: "cancelled",
@@ -288,7 +305,6 @@ export async function cancelBookingSelf(bookingId: string): Promise<void> {
       cancelledAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     });
-    tx.update(slotRef, { status: "cancelled" });
     logBookingEvent(tx, bookingId, "CANCELLED", status, "cancelled", "user");
   });
 }

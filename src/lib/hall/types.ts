@@ -12,12 +12,17 @@ export type Slot = "Morning" | "Evening";
 
 // Public availability layer only (see firestore.rules) — deliberately carries no pointer to
 // the private bookings record, since this collection is publicly listable for the calendar.
+// occupiedSince is NOT a pointer to PII — it's a plain timestamp (matching the current
+// occupant's own createdAt, set atomically in the same transaction) used only so the admin
+// sweep (Task 20) can verify it's still syncing the SAME occupancy episode it thinks it is,
+// rather than stomping a newer booking that has since legitimately reclaimed this slot.
 export interface BookingSlotDoc {
   venue: string;
   date: string;
   slot: Slot;
   status: BookingStatus;
   expiresAt: Timestamp | null;
+  occupiedSince: Timestamp;
 }
 
 export interface BookingDoc extends BookingSlotDoc {
