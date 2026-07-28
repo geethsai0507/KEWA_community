@@ -33,16 +33,14 @@ service cloud.firestore {
     // booking (see bookings/{bookingId} below) since that rule only checks the transition
     // shape, not identity — the actual authorization boundary is "you can't discover the ID
     // in the first place."
+    // Expiring a stale pending-payment slot (status -> expired) is an admin-only sweep (run
+    // from the authenticated admin panel, which already holds bookingIds via its own
+    // privileged bookings.list() access) — there is no public write path for this transition,
+    // since the calendar no longer triggers it client-side (see Task 12's design note).
     match /bookingSlots/{slotId} {
       allow get, list: if true;
       allow create: if isCreateFieldsValid();
-      allow update: if isAdmin()
-        || (
-          resource.data.status == 'pending-payment'
-          && request.resource.data.status == 'expired'
-          && resource.data.expiresAt < request.time
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
-        );
+      allow update: if isAdmin();
       allow delete: if isAdmin();
     }
 
@@ -66,13 +64,6 @@ service cloud.firestore {
           && request.resource.data.cancelledBy == 'user'
           && request.resource.data.diff(resource.data).affectedKeys()
                .hasOnly(['status', 'cancelledBy', 'cancelledAt', 'updatedAt'])
-        )
-        || (
-          resource.data.status == 'pending-payment'
-          && request.resource.data.status == 'expired'
-          && resource.data.expiresAt < request.time
-          && request.resource.data.diff(resource.data).affectedKeys()
-               .hasOnly(['status', 'updatedAt'])
         );
       allow delete: if isAdmin();
     }
