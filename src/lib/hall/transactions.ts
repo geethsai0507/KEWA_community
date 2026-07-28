@@ -268,3 +268,67 @@ export async function rejectPayment(bookingId: string): Promise<void> {
     logBookingEvent(tx, bookingId, "REJECTED", "pending-verification", "cancelled", adminEmail);
   });
 }
+
+export async function cancelBookingSelf(bookingId: string): Promise<void> {
+  const bookingRef = doc(db, "bookings", bookingId);
+
+  await runTransaction(db, async (tx) => {
+    const snap = await tx.get(bookingRef);
+    if (!snap.exists()) throw new Error("NOT_FOUND");
+    const data = snap.data();
+    const status = data.status;
+    if (status !== "confirmed" && status !== "pending-payment") {
+      throw new Error("INVALID_STATE");
+    }
+    const slotRef = doc(db, "bookingSlots", slotDocId(data.venue, data.date, data.slot));
+
+    tx.update(bookingRef, {
+      status: "cancelled",
+      cancelledBy: "user",
+      cancelledAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+    tx.update(slotRef, { status: "cancelled" });
+    logBookingEvent(tx, bookingId, "CANCELLED", status, "cancelled", "user");
+  });
+}
+
+export async function cancelBookingAdmin(bookingId: string): Promise<void> {
+  const adminEmail = requireAdminEmail();
+  const bookingRef = doc(db, "bookings", bookingId);
+
+  await runTransaction(db, async (tx) => {
+    const snap = await tx.get(bookingRef);
+    if (!snap.exists()) throw new Error("NOT_FOUND");
+    const data = snap.data();
+    const status = data.status;
+    if (status === "cancelled" || status === "expired") throw new Error("INVALID_STATE");
+    const slotRef = doc(db, "bookingSlots", slotDocId(data.venue, data.date, data.slot));
+
+    tx.update(bookingRef, {
+      status: "cancelled",
+      cancelledBy: "admin",
+      cancelledAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+    tx.update(slotRef, { status: "cancelled" });
+    logBookingEvent(tx, bookingId, "CANCELLED", status, "cancelled", adminEmail);
+  });
+}
+
+export async function expireStaleBooking(bookingId: string): Promise<void> {
+  const bookingRef = doc(db, "bookings", bookingId);
+
+  await runTransaction(db, async (tx) => {
+    const snap = await tx.get(bookingRef);
+    if (!snap.exists()) return;
+    const data = snap.data();
+    if (data.status !== "pending-payment") return;
+    if (!isExpiredPendingPayment(data.status, data.expiresAt, Date.now())) return;
+    const slotRef = doc(db, "bookingSlots", slotDocId(data.venue, data.date, data.slot));
+
+    tx.update(bookingRef, { status: "expired", updatedAt: serverTimestamp() });
+    tx.update(slotRef, { status: "expired" });
+    logBookingEvent(tx, bookingId, "EXPIRED", "pending-payment", "expired", "system");
+  });
+}
