@@ -29,6 +29,7 @@ src/lib/hall/
   types.ts         — shared TS types (BookingStatus, BookingSlotDoc, BookingDoc, MemberPublicDoc, etc.)
   constants.ts     — VENUES, SLOTS, PENDING_PAYMENT_TIMEOUT_MS
   fees.ts          — calculateBookingFee(isMember, venue)
+  slotKey.ts       — slotDocId(venue, date, slot): deterministic bookingSlots doc ID; otherSlot(slot)
   crypto.ts        — sha256Hex(input), generateLookupToken(), generateBookingNumber()
   conflict.ts       — isBlockingSlot(status, expiresAt, now), evaluateConflict(existingDocs, venue, date, slot)
   firebase.ts      — Firebase app init; exports `db`, `auth`
@@ -195,7 +196,10 @@ service cloud.firestore {
 
     match /bookingSlots/{slotId} {
       allow get, list: if true;
-      allow create: if isCreateFieldsValid();
+      // bookingSlots is keyed by a deterministic venue|date|slot ID (see Task 6), not the
+      // random bookingId, so each doc also needs its own bookingId field as a pointer to
+      // the matching bookings/{bookingId} record.
+      allow create: if isCreateFieldsValid() && request.resource.data.bookingId is string;
       allow update: if isAdmin()
         || (
           resource.data.status == 'pending-payment'
@@ -339,6 +343,7 @@ export type BookingStatus =
 export type Slot = "Morning" | "Evening";
 
 export interface BookingSlotDoc {
+  bookingId: string;
   venue: string;
   date: string;
   slot: Slot;
@@ -453,11 +458,80 @@ export function calculateBookingFee(isMember: boolean, venue: string): number {
 Run: `bun run test src/lib/hall/fees.test.ts`
 Expected: PASS (5 tests)
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 7: Write the failing test for `slotDocId`/`otherSlot`**
+
+These two tiny functions matter more than their size suggests: `slotDocId` derives the deterministic Firestore document ID that Task 6's transaction relies on to atomically prevent double-booking (see that task for why an auto-generated ID isn't safe for this). `otherSlot` computes the fixed "other slot that day" reference needed for the same-day-caution check — since there are only ever two slots, this is a pure lookup, not a query.
+
+`src/lib/hall/slotKey.test.ts`:
+```typescript
+import { describe, it, expect } from "vitest";
+import { slotDocId, otherSlot } from "./slotKey";
+
+describe("slotDocId", () => {
+  it("produces the same key for the same venue/date/slot", () => {
+    expect(slotDocId("Multi Purpose Room", "2026-08-15", "Morning")).toBe(
+      slotDocId("Multi Purpose Room", "2026-08-15", "Morning"),
+    );
+  });
+  it("produces different keys for different slots on the same day", () => {
+    expect(slotDocId("Multi Purpose Room", "2026-08-15", "Morning")).not.toBe(
+      slotDocId("Multi Purpose Room", "2026-08-15", "Evening"),
+    );
+  });
+  it("produces different keys for different dates", () => {
+    expect(slotDocId("Multi Purpose Room", "2026-08-15", "Morning")).not.toBe(
+      slotDocId("Multi Purpose Room", "2026-08-16", "Morning"),
+    );
+  });
+  it("produces different keys for different venues", () => {
+    expect(slotDocId("Multi Purpose Room", "2026-08-15", "Morning")).not.toBe(
+      slotDocId("Shopping Complex Room", "2026-08-15", "Morning"),
+    );
+  });
+  it("never contains a forward slash (invalid in a single Firestore path segment)", () => {
+    expect(slotDocId("Multi Purpose Room", "2026-08-15", "Morning")).not.toContain("/");
+  });
+});
+
+describe("otherSlot", () => {
+  it("maps Morning to Evening", () => {
+    expect(otherSlot("Morning")).toBe("Evening");
+  });
+  it("maps Evening to Morning", () => {
+    expect(otherSlot("Evening")).toBe("Morning");
+  });
+});
+```
+
+- [ ] **Step 8: Run test to verify it fails**
+
+Run: `bun run test src/lib/hall/slotKey.test.ts`
+Expected: FAIL with "Cannot find module './slotKey'"
+
+- [ ] **Step 9: Write `src/lib/hall/slotKey.ts`**
+
+```typescript
+import type { Slot } from "./types";
+
+export function slotDocId(venue: string, date: string, slot: Slot): string {
+  return `${venue}|${date}|${slot}`;
+}
+
+export function otherSlot(slot: Slot): Slot {
+  return slot === "Morning" ? "Evening" : "Morning";
+}
+```
+
+- [ ] **Step 10: Run test to verify it passes**
+
+Run: `bun run test src/lib/hall/slotKey.test.ts`
+Expected: PASS (7 tests)
+
+- [ ] **Step 11: Commit**
 
 ```bash
-git add src/lib/hall/types.ts src/lib/hall/constants.ts src/lib/hall/fees.ts src/lib/hall/fees.test.ts
-git commit -m "Add hall booking types, constants, and fee calculation"
+git add src/lib/hall/types.ts src/lib/hall/constants.ts src/lib/hall/fees.ts src/lib/hall/fees.test.ts src/lib/hall/slotKey.ts src/lib/hall/slotKey.test.ts
+git commit -m "Add hall booking types, constants, fee calculation, and deterministic slot-key helper"
 ```
 
 ---
@@ -698,12 +772,14 @@ git commit -m "Add conflict-rule and payment-expiry pure logic"
 - Create: `src/lib/hall/transactions.ts`
 
 **Interfaces:**
-- Consumes: `db` (Task 1), `BookingSlotDoc`/`BookingDoc` (Task 3), `calculateBookingFee` (Task 3), `generateBookingNumber`/`generateLookupToken` (Task 4), `isBlockingSlot` (Task 5).
+- Consumes: `db` (Task 1), `BookingSlotDoc`/`BookingDoc` (Task 3), `calculateBookingFee` (Task 3), `generateBookingNumber`/`generateLookupToken` (Task 4), `isBlockingSlot` (Task 5), `slotDocId`/`otherSlot` (Task 3).
 - Produces:
   - `logBookingEvent(tx: Transaction, bookingId: string, action: string, oldStatus: BookingStatus | null, newStatus: BookingStatus, performedBy: string): void`
   - `createBooking(input: { name, empId, phone, email, venue, date, slot, purpose, duration, isMember }): Promise<{ bookingId: string; bookingNumber: string; lookupToken: string; status: "pending-payment" | "pending-approval" }>`
 
-This task has no isolated unit test — it's a Firestore transaction, and per the spec's Testing section, mocking Firestore transactions isn't worth the effort. It's verified via the manual QA checklist in Task 22 (booking happy path, real-slot-conflict rejection, same-day-caution path). This matches the plan's approach for every subsequent `transactions.ts` function.
+**Why `bookingSlots` uses a deterministic document ID, not the random `bookingId`:** Firestore transactions only get automatic conflict detection for documents read via `tx.get()` on a *known reference* inside the transaction — they cannot run `where()` queries transactionally at all. If the conflict check ran as a `getDocs()` query before the transaction (as an earlier draft of this plan did) and then wrote to a brand-new random-ID document inside the transaction, two concurrent requests for the same venue+date+slot could both pass the pre-check and both get written — a real double-booking, and exactly the failure mode the spec's "transaction is the sole authority on double-booking prevention" claim was meant to rule out. Keying `bookingSlots` by `slotDocId(venue, date, slot)` fixes this: there are only ever two possible slots per venue per day, so both "is this exact slot taken" and "does the other slot that day have anything blocking" become reads of two *known, fixed* document references — genuinely atomic via `tx.get()`. The `bookings/{bookingId}` document keeps its own random ID as before; `bookingSlots` stores a `bookingId` field pointing at whichever booking currently holds that slot. `blockedDates` stays a pre-transaction `getDocs()` check — blocking a date is an infrequent admin action, not something two customers race on, so it doesn't need this treatment.
+
+This task has no isolated unit test for the transaction itself — it's a Firestore transaction, and per the spec's Testing section, mocking Firestore transactions isn't worth the effort. It's verified via the manual QA checklist in Task 22 (booking happy path, real-slot-conflict rejection, same-day-caution path, and — new — a genuine concurrency check: fire two `createBooking` calls for the same venue+date+slot at the same time and confirm exactly one succeeds). This matches the plan's approach for every subsequent `transactions.ts` function.
 
 - [ ] **Step 1: Write `src/lib/hall/events.ts`**
 
@@ -749,6 +825,7 @@ import { db } from "./firebase";
 import { calculateBookingFee } from "./fees";
 import { generateBookingNumber, generateLookupToken } from "./crypto";
 import { isBlockingSlot } from "./conflict";
+import { slotDocId, otherSlot } from "./slotKey";
 import { PENDING_PAYMENT_TIMEOUT_MS } from "./constants";
 import { logBookingEvent } from "./events";
 import type { BookingStatus, Slot } from "./types";
@@ -776,28 +853,19 @@ export interface CreateBookingResult {
 export async function createBooking(input: CreateBookingInput): Promise<CreateBookingResult> {
   const bookingRef = doc(collection(db, "bookings"));
   const bookingId = bookingRef.id;
-  const slotRef = doc(db, "bookingSlots", bookingId);
 
-  const sameSlotQuery = query(
-    collection(db, "bookingSlots"),
-    where("venue", "==", input.venue),
-    where("date", "==", input.date),
-    where("slot", "==", input.slot),
+  const slotRef = doc(db, "bookingSlots", slotDocId(input.venue, input.date, input.slot));
+  const otherSlotRef = doc(
+    db,
+    "bookingSlots",
+    slotDocId(input.venue, input.date, otherSlot(input.slot)),
   );
-  const sameDateQuery = query(
-    collection(db, "bookingSlots"),
-    where("venue", "==", input.venue),
-    where("date", "==", input.date),
-  );
+
+  // blockedDates is checked before the transaction, not inside it: blocking a date is an
+  // infrequent admin action, not something two customers race on, so this doesn't need
+  // transactional atomicity the way the slot conflict check below does.
   const blockedQuery = query(collection(db, "blockedDates"), where("date", "==", input.date));
-
-  const [sameSlotSnap, sameDateSnap, blockedSnap] = await Promise.all([
-    getDocs(sameSlotQuery),
-    getDocs(sameDateQuery),
-    getDocs(blockedQuery),
-  ]);
-  const now = Date.now();
-
+  const blockedSnap = await getDocs(blockedQuery);
   const isBlockedDate = blockedSnap.docs.some((d) => {
     const data = d.data();
     return data.venue === "all" || data.venue === input.venue;
@@ -806,39 +874,44 @@ export async function createBooking(input: CreateBookingInput): Promise<CreateBo
     throw new Error("DATE_BLOCKED");
   }
 
-  const hasBlockingSameSlot = sameSlotSnap.docs.some((d) => {
-    const data = d.data();
-    return isBlockingSlot(data.status as BookingStatus, data.expiresAt ?? null, now);
-  });
-  if (hasBlockingSameSlot) {
-    throw new Error("SLOT_TAKEN");
-  }
-
-  const hasBlockingSameDateOtherSlot = sameDateSnap.docs.some((d) => {
-    const data = d.data();
-    return (
-      data.slot !== input.slot &&
-      isBlockingSlot(data.status as BookingStatus, data.expiresAt ?? null, now)
-    );
-  });
-
   const bookingNumber = generateBookingNumber();
   const lookupToken = generateLookupToken();
   const amount = calculateBookingFee(input.isMember, input.venue);
-  const status: CreateBookingResult["status"] = hasBlockingSameDateOtherSlot
-    ? "pending-approval"
-    : "pending-payment";
-  const expiresAt =
-    status === "pending-payment"
-      ? Timestamp.fromMillis(now + PENDING_PAYMENT_TIMEOUT_MS)
-      : null;
 
-  await runTransaction(db, async (tx) => {
+  const status = await runTransaction(db, async (tx) => {
+    // Both reads happen on known, deterministic document references — this is what makes
+    // the conflict check genuinely atomic (see this task's note on why bookingSlots uses a
+    // deterministic ID instead of the random bookingId).
+    const [slotSnap, otherSlotSnap] = await Promise.all([tx.get(slotRef), tx.get(otherSlotRef)]);
+    const now = Date.now();
+
+    if (slotSnap.exists()) {
+      const data = slotSnap.data();
+      if (isBlockingSlot(data.status as BookingStatus, data.expiresAt ?? null, now)) {
+        throw new Error("SLOT_TAKEN");
+      }
+    }
+
+    let hasBlockingOtherSlot = false;
+    if (otherSlotSnap.exists()) {
+      const data = otherSlotSnap.data();
+      hasBlockingOtherSlot = isBlockingSlot(data.status as BookingStatus, data.expiresAt ?? null, now);
+    }
+
+    const resolvedStatus: CreateBookingResult["status"] = hasBlockingOtherSlot
+      ? "pending-approval"
+      : "pending-payment";
+    const expiresAt =
+      resolvedStatus === "pending-payment"
+        ? Timestamp.fromMillis(now + PENDING_PAYMENT_TIMEOUT_MS)
+        : null;
+
     const slotDoc = {
+      bookingId,
       venue: input.venue,
       date: input.date,
       slot: input.slot,
-      status,
+      status: resolvedStatus,
       bookingNumber,
       lookupToken,
       expiresAt,
@@ -867,7 +940,8 @@ export async function createBooking(input: CreateBookingInput): Promise<CreateBo
     };
     tx.set(slotRef, slotDoc);
     tx.set(bookingRef, bookingDoc);
-    logBookingEvent(tx, bookingId, "CREATED", null, status, "user");
+    logBookingEvent(tx, bookingId, "CREATED", null, resolvedStatus, "user");
+    return resolvedStatus;
   });
 
   return { bookingId, bookingNumber, lookupToken, status };
@@ -876,7 +950,7 @@ export async function createBooking(input: CreateBookingInput): Promise<CreateBo
 
 - [ ] **Step 3: Manually verify against a real (or emulated) Firestore project**
 
-This can't be exercised until Task 22 provisions a Firebase project. Note it here as a checklist item to run then: create two bookings for the same venue+date+slot back-to-back and confirm the second throws `SLOT_TAKEN`; create a booking for the same venue+date but a different slot and confirm it comes back `status: "pending-approval"`.
+This can't be exercised until Task 22 provisions a Firebase project. Note it here as a checklist item to run then: create two bookings for the same venue+date+slot back-to-back and confirm the second throws `SLOT_TAKEN`; create a booking for the same venue+date but a different slot and confirm it comes back `status: "pending-approval"`; fire two `createBooking` calls concurrently (e.g. two browser tabs clicking submit at the same moment) for the same venue+date+slot and confirm exactly one succeeds and the other throws `SLOT_TAKEN` — this is the scenario the deterministic-ID redesign exists to fix, so it's worth deliberately testing, not just trusting the code reads correctly.
 
 - [ ] **Step 4: Commit**
 
@@ -901,6 +975,7 @@ git commit -m "Add booking-event logging and createBooking transaction"
 ```typescript
 import { getDoc } from "firebase/firestore";
 import { isExpiredPendingPayment } from "./conflict";
+import { slotDocId } from "./slotKey";
 
 export async function submitUtr(bookingId: string, utr: string): Promise<void> {
   const duplicateQuery = query(collection(db, "bookings"), where("utr", "==", utr));
@@ -913,7 +988,6 @@ export async function submitUtr(bookingId: string, utr: string): Promise<void> {
   }
 
   const bookingRef = doc(db, "bookings", bookingId);
-  const slotRef = doc(db, "bookingSlots", bookingId);
 
   await runTransaction(db, async (tx) => {
     const bookingSnap = await tx.get(bookingRef);
@@ -923,6 +997,9 @@ export async function submitUtr(bookingId: string, utr: string): Promise<void> {
     if (isExpiredPendingPayment(data.status, data.expiresAt, Date.now())) {
       throw new Error("EXPIRED");
     }
+    // bookingSlots is keyed by venue|date|slot, not by bookingId — see Task 6's note on
+    // why the deterministic key is what makes createBooking's conflict check atomic.
+    const slotRef = doc(db, "bookingSlots", slotDocId(data.venue, data.date, data.slot));
 
     tx.update(bookingRef, {
       status: "pending-verification",
@@ -971,14 +1048,15 @@ function requireAdminEmail(): string {
 export async function approveBooking(bookingId: string): Promise<void> {
   const adminEmail = requireAdminEmail();
   const bookingRef = doc(db, "bookings", bookingId);
-  const slotRef = doc(db, "bookingSlots", bookingId);
   const now = Date.now();
   const expiresAt = Timestamp.fromMillis(now + PENDING_PAYMENT_TIMEOUT_MS);
 
   await runTransaction(db, async (tx) => {
     const snap = await tx.get(bookingRef);
     if (!snap.exists()) throw new Error("NOT_FOUND");
-    if (snap.data().status !== "pending-approval") throw new Error("INVALID_STATE");
+    const data = snap.data();
+    if (data.status !== "pending-approval") throw new Error("INVALID_STATE");
+    const slotRef = doc(db, "bookingSlots", slotDocId(data.venue, data.date, data.slot));
 
     tx.update(bookingRef, {
       status: "pending-payment",
@@ -995,12 +1073,13 @@ export async function approveBooking(bookingId: string): Promise<void> {
 export async function rejectApproval(bookingId: string): Promise<void> {
   const adminEmail = requireAdminEmail();
   const bookingRef = doc(db, "bookings", bookingId);
-  const slotRef = doc(db, "bookingSlots", bookingId);
 
   await runTransaction(db, async (tx) => {
     const snap = await tx.get(bookingRef);
     if (!snap.exists()) throw new Error("NOT_FOUND");
-    if (snap.data().status !== "pending-approval") throw new Error("INVALID_STATE");
+    const data = snap.data();
+    if (data.status !== "pending-approval") throw new Error("INVALID_STATE");
+    const slotRef = doc(db, "bookingSlots", slotDocId(data.venue, data.date, data.slot));
 
     tx.update(bookingRef, {
       status: "cancelled",
@@ -1015,6 +1094,8 @@ export async function rejectApproval(bookingId: string): Promise<void> {
   });
 }
 ```
+
+Note: `slotDocId` is imported from `./slotKey` (already imported into this file in Task 7).
 
 - [ ] **Step 2: Manual verification checklist (Task 22)**
 
@@ -1044,12 +1125,13 @@ git commit -m "Add approveBooking and rejectApproval admin transactions"
 export async function verifyPayment(bookingId: string): Promise<void> {
   const adminEmail = requireAdminEmail();
   const bookingRef = doc(db, "bookings", bookingId);
-  const slotRef = doc(db, "bookingSlots", bookingId);
 
   await runTransaction(db, async (tx) => {
     const snap = await tx.get(bookingRef);
     if (!snap.exists()) throw new Error("NOT_FOUND");
-    if (snap.data().status !== "pending-verification") throw new Error("INVALID_STATE");
+    const data = snap.data();
+    if (data.status !== "pending-verification") throw new Error("INVALID_STATE");
+    const slotRef = doc(db, "bookingSlots", slotDocId(data.venue, data.date, data.slot));
 
     tx.update(bookingRef, {
       status: "confirmed",
@@ -1065,12 +1147,13 @@ export async function verifyPayment(bookingId: string): Promise<void> {
 export async function rejectPayment(bookingId: string): Promise<void> {
   const adminEmail = requireAdminEmail();
   const bookingRef = doc(db, "bookings", bookingId);
-  const slotRef = doc(db, "bookingSlots", bookingId);
 
   await runTransaction(db, async (tx) => {
     const snap = await tx.get(bookingRef);
     if (!snap.exists()) throw new Error("NOT_FOUND");
-    if (snap.data().status !== "pending-verification") throw new Error("INVALID_STATE");
+    const data = snap.data();
+    if (data.status !== "pending-verification") throw new Error("INVALID_STATE");
+    const slotRef = doc(db, "bookingSlots", slotDocId(data.venue, data.date, data.slot));
 
     tx.update(bookingRef, {
       status: "cancelled",
@@ -1113,15 +1196,16 @@ git commit -m "Add verifyPayment and rejectPayment admin transactions"
 ```typescript
 export async function cancelBookingSelf(bookingId: string): Promise<void> {
   const bookingRef = doc(db, "bookings", bookingId);
-  const slotRef = doc(db, "bookingSlots", bookingId);
 
   await runTransaction(db, async (tx) => {
     const snap = await tx.get(bookingRef);
     if (!snap.exists()) throw new Error("NOT_FOUND");
-    const status = snap.data().status;
+    const data = snap.data();
+    const status = data.status;
     if (status !== "confirmed" && status !== "pending-payment") {
       throw new Error("INVALID_STATE");
     }
+    const slotRef = doc(db, "bookingSlots", slotDocId(data.venue, data.date, data.slot));
 
     tx.update(bookingRef, {
       status: "cancelled",
@@ -1137,13 +1221,14 @@ export async function cancelBookingSelf(bookingId: string): Promise<void> {
 export async function cancelBookingAdmin(bookingId: string): Promise<void> {
   const adminEmail = requireAdminEmail();
   const bookingRef = doc(db, "bookings", bookingId);
-  const slotRef = doc(db, "bookingSlots", bookingId);
 
   await runTransaction(db, async (tx) => {
     const snap = await tx.get(bookingRef);
     if (!snap.exists()) throw new Error("NOT_FOUND");
-    const status = snap.data().status;
+    const data = snap.data();
+    const status = data.status;
     if (status === "cancelled" || status === "expired") throw new Error("INVALID_STATE");
+    const slotRef = doc(db, "bookingSlots", slotDocId(data.venue, data.date, data.slot));
 
     tx.update(bookingRef, {
       status: "cancelled",
@@ -1158,7 +1243,6 @@ export async function cancelBookingAdmin(bookingId: string): Promise<void> {
 
 export async function expireStaleBooking(bookingId: string): Promise<void> {
   const bookingRef = doc(db, "bookings", bookingId);
-  const slotRef = doc(db, "bookingSlots", bookingId);
 
   await runTransaction(db, async (tx) => {
     const snap = await tx.get(bookingRef);
@@ -1166,6 +1250,7 @@ export async function expireStaleBooking(bookingId: string): Promise<void> {
     const data = snap.data();
     if (data.status !== "pending-payment") return;
     if (!isExpiredPendingPayment(data.status, data.expiresAt, Date.now())) return;
+    const slotRef = doc(db, "bookingSlots", slotDocId(data.venue, data.date, data.slot));
 
     tx.update(bookingRef, { status: "expired", updatedAt: serverTimestamp() });
     tx.update(slotRef, { status: "expired" });
@@ -1300,6 +1385,7 @@ import type { BookingStatus, Slot } from "./types";
 export type DayStatus = "available" | "confirmed" | "pending" | "held" | "blocked";
 
 interface SlotLike {
+  bookingId: string;
   status: BookingStatus;
   expiresAt: { toMillis(): number } | null;
   slot: Slot;
@@ -1376,7 +1462,9 @@ export function subscribeToCalendar(
       byDate[data.date].push(data);
 
       if (isExpiredPendingPayment(data.status, data.expiresAt, now)) {
-        void expireStaleBooking(d.id);
+        // bookingSlots' doc ID is now the deterministic venue|date|slot key (Task 6), not
+        // the bookingId — the actual bookings doc to expire is pointed to by data.bookingId.
+        void expireStaleBooking(data.bookingId);
       }
     }
     latestSlots = byDate;
@@ -2154,7 +2242,9 @@ function StatusPage() {
         }
         return;
       }
-      const bookingId = slotSnap.docs[0].id;
+      // bookingSlots' doc ID is the deterministic venue|date|slot key (Task 6), not the
+      // bookingId — the matched slot doc's bookingId field points to the real booking.
+      const bookingId = slotSnap.docs[0].data().bookingId as string;
       const bookingSnap = await getDoc(doc(db, "bookings", bookingId));
       if (!cancelled) {
         if (bookingSnap.exists()) {
@@ -2746,3 +2836,6 @@ git commit -m "Document hall booking deployment steps and finalize Firebase proj
 **Type consistency check performed:** `BookingDoc`/`BookingSlotDoc` (Task 3) field names match what Tasks 6–21 read/write (`empIdHash`/`isMember` in `membersPublic`, `cancelledBy`/`approvedBy`/`paymentVerifiedBy`/`rejectedBy` naming consistent across transactions.ts and admin.tsx). `DayStatus` type (Task 12) matches its usage in Task 14's `CalendarPanel`. `CreateBookingResult` (Task 6) matches its destructuring in Task 16.
 
 **Gap found and fixed during self-review:** an earlier draft of this plan had `blockedDates` displayed in the admin tab (Task 20) but never actually consulted by `createBooking` (Task 6) or the calendar (Task 12/14) — meaning blocking a date would have had no real effect. Fixed by adding a `blockedDates` check to `createBooking`'s conflict evaluation (throws `DATE_BLOCKED`), propagating that error to the booking wizard's UI (Task 16), and extending `subscribeToCalendar`/`deriveDayStatus`'s `DayStatus` type with a `"blocked"` state fed by a second `onSnapshot` listener on `blockedDates` (Task 12), rendered in the calendar grid (Task 14).
+
+**Correction made before execution began (critical-review pass, not a self-review-loop finding):** the original Task 6 ran the venue+date+slot conflict check as `getDocs()` queries *before* opening the transaction, then wrote a brand-new random-ID `bookingSlots` document *inside* the transaction. Firestore transactions only get automatic conflict detection for documents read via `tx.get()` on a known reference inside the transaction — they can't run `where()` queries transactionally at all, and a pre-transaction query result isn't retried on contention. Two concurrent `createBooking` calls for the same venue+date+slot could both pass the pre-check and both get written, which is exactly the double-booking the spec's "transaction is the sole authority" claim was meant to prevent. Fixed by giving `bookingSlots` a deterministic document ID (`slotDocId(venue, date, slot)`, Task 3's new `slotKey.ts`) instead of sharing the random `bookingId` — since there are only two possible slots per venue per day, both "is this slot taken" and "does the other slot that day block" become reads of two known, fixed document references, which *are* genuinely atomic via `tx.get()` inside `runTransaction`. `bookingSlots` now carries an explicit `bookingId` field pointing at the current occupant's `bookings/{bookingId}` record; every place that previously assumed "slot doc ID == bookingId" (Tasks 7–10's slot-mirror updates, Task 12's expiry trigger, Task 17's status lookup) was updated to resolve the slot doc by its deterministic key or read `bookingId` from it instead. `blockedDates` was deliberately left as a pre-transaction check — it's an infrequent admin action, not a customer-vs-customer race, so it doesn't need this treatment.
+
