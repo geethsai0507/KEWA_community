@@ -20,7 +20,9 @@ reference site has these, this spec covers hall booking only.
 - Data + Auth: Firebase (Firestore + Firebase Auth), Spark (free) tier.
 - Email: EmailJS free tier, triggered client-side.
 - Hosting: Netlify static build. Firebase/EmailJS are called directly from the
-  browser — there is no server to deploy, run, or maintain.
+  browser. There is no custom application server to deploy, run, or maintain
+  — Firebase itself is still backend infrastructure, just infrastructure this
+  project doesn't have to build or operate.
 - Double-booking prevention and 15-minute payment-hold expiry are both done
   with Firestore transactions from the client SDK — no Cloud Functions needed
   for the core flow.
@@ -61,14 +63,24 @@ date          string   "YYYY-MM-DD"
 slot          "Morning" | "Evening"
 status        "pending-approval" | "pending-payment" | "pending-verification"
               | "confirmed" | "cancelled" | "expired"
-bookingNumber string   "EC-XXXXXX", public human-readable reference
+bookingNumber string   "EC-XXXXXX", public human-readable reference (display only)
+lookupToken   string   random 128-bit token (hex/base64), the actual lookup credential
 expiresAt     Firestore Timestamp | null   (set only while status = pending-payment)
 ```
 
 Document ID is Firestore's auto-generated ID, and **the same ID is used for the
-paired `bookings/{id}` document** — this is how a public Booking Number lookup
-resolves to the private record (see below) without ever needing the Booking
-Number to be the document ID.
+paired `bookings/{id}` document** — this is how a status lookup resolves to the
+private record (see below) without ever needing a public field to be the
+document ID.
+
+**`bookingNumber` vs `lookupToken`:** `bookingNumber` is what the user sees
+(confirmation screen, print slip, emails) — it can be a short, readable
+sequence like `EC-4F82A1` since it is *not* the security boundary.
+`lookupToken` is a separate, cryptographically random 128-bit value generated
+at booking creation, never displayed, and used only as the query key for
+status lookup (see below). This avoids the security of the lookup depending on
+`bookingNumber` being unguessable — a sequential or short human-facing ID
+(`EC-000001`, `EC-000002`, ...) would otherwise be enumerable.
 
 Public fields are deliberately limited to the above. Do not add: internal audit
 fields, or timestamps beyond `expiresAt` that would reveal activity patterns
@@ -82,6 +94,7 @@ and write. It must never diverge from `bookings` (see Consistency Rule below).
 
 ```
 bookingNumber   string   "EC-XXXXXX" (denormalized copy, matches bookingSlots)
+lookupToken     string   denormalized copy, matches bookingSlots
 name, empId, phone, email   string
 venue           string
 date            string
@@ -122,12 +135,34 @@ timestamp    Firestore Timestamp (serverTimestamp())
 
 Written alongside every transition, in the same transaction where practical.
 
-### `members`
+### `members` (admin-only, full PII)
 
-`empId, name, phone` — populated via admin Excel upload (SheetJS), used for the
-membership-verification step and fee-tier lookup. Read access: same accepted
-trade-off as the reference site — the full list is downloaded client-side for
-the verification step. Not hardened in this pass (see Fidelity note below).
+`empId, name, phone` — populated via admin Excel upload (SheetJS). Used by the
+admin panel's Members directory tab. **Read and write are both admin-only** —
+this is not exposed to the public client.
+
+### `membersPublic` (public read, no PII)
+
+```
+empIdHash   string   SHA-256(empId, lowercased/trimmed)
+isMember    boolean
+```
+
+Written by the admin panel alongside `members` — when the admin uploads the
+Excel sheet, the client computes `empIdHash` for each row and writes both the
+full `members` doc (admin-only) and the corresponding `membersPublic` doc
+(public, hash only) in the same operation.
+
+**Membership verification step, revised:** user types their Employee ID, the
+client computes `SHA-256(empId)` locally and queries `membersPublic` for a
+matching `empIdHash`. If found, membership is confirmed and fee tier is set to
+"member" — but **the employee's name is no longer auto-filled**, since no
+public collection holds the name/phone mapping anymore. The user types their
+own name/phone/email in the Details step, same as they would for a
+non-member booking. This is a deliberate trade-off: it fully closes the
+"anyone can read the whole employee directory from devtools" gap the
+reference site has, at the cost of one convenience feature (auto-fill) that
+isn't required for the booking to work.
 
 ### `blockedDates`
 
@@ -173,9 +208,10 @@ Rules:
 
 ## Booking Submission Flow
 
-1. **Membership verification** — user enters Employee ID, client looks up the
-   already-downloaded `members` array. Unchanged from reference (see Fidelity
-   note).
+1. **Membership verification** — user enters Employee ID, client computes
+   `SHA-256(empId)` and queries `membersPublic` for a matching `empIdHash` (see
+   Data Model). Unlike the reference site, this does not auto-fill name/phone
+   — the user provides those in the Details step.
 2. **Details form** — same client-side validation as reference (phone/email
    regex, no past dates, T&C checkbox). Fee computed via
    `calculateBookingFee(isMember, venue)`.
@@ -257,17 +293,26 @@ Firebase console (no self-registration UI).
 
 ## Self-Service Status Lookup ("My Status")
 
-Lookup is **by Booking Number only** — no Employee-ID-based "list all my
-bookings" feature (this is a deliberate change from the reference site, made
-to close a privacy gap; see Security Rules). Flow:
-1. Query `bookingSlots.where('bookingNumber', '==', input)` (public, no PII) to
-   resolve the doc ID.
-2. `bookings.doc(id).get()` (public single-doc get) to fetch and display the
-   full record.
+Lookup is **by `lookupToken` only** — there is no public path that accepts a
+Booking Number and resolves it to a token, since that would just reintroduce
+Booking Number as the real security boundary through indirection (it's
+documented above as short/guessable by design, not a secret). Concretely:
+1. The confirmation screen, printable slip, and every notification email
+   present a direct link encoding the token (e.g. `/hall/status?token=...`).
+   This link is the only way a user reaches their own booking's status page.
+2. That page queries `bookingSlots.where('lookupToken', '==', token)` (public,
+   no PII) to resolve the doc ID, then `bookings.doc(id).get()` (public
+   single-doc get) to fetch and display the full record.
+3. Booking Number is still shown everywhere (confirmation, slip, emails) as a
+   human-friendly reference for phone/in-person conversations with the
+   office — but it is not a valid input anywhere in the self-service lookup
+   UI. If a user loses their status link and can't find the emails, an admin
+   can look them up in the admin panel via an authenticated query on
+   `bookings` by `bookingNumber` (admin-only `list` access already covers
+   this) and re-send the link.
 
-The Booking Number is always available to the user — shown on the confirmation
-screen, the printable slip, and every notification email — so this isn't a
-usability regression relative to requiring it.
+The token itself must come from a cryptographically random source (not
+`Math.random()`), generated once at booking creation and never regenerated.
 
 ## Email Notifications (EmailJS, 4 templates)
 
@@ -284,12 +329,43 @@ usability regression relative to requiring it.
 
 ## Security Rules (Firestore)
 
-- `bookingSlots`: `get`/`list` public (no PII, safe to expose broadly);
-  `create`/`update`/`delete` only via the transaction paths described above —
-  in practice this means write access needs to be broad enough for the public
-  booking-creation transaction to work, but the collection's lack of PII makes
-  this low-risk. Public fields are strictly limited to `venue, date, slot,
-  status, bookingNumber, expiresAt` — no internal audit fields.
+- `bookingSlots`: `get`/`list` public (no PII, safe to expose broadly).
+  **Firestore rules cannot verify that a write came from a transaction or that
+  a client followed the intended application flow** — a rule only sees the
+  document being written, so "only via the transaction paths described above"
+  must be expressed as explicit per-field constraints, not as a comment. The
+  rules must state:
+  - `create`: allowed only when `status` is exactly `pending-payment` or
+    `pending-approval`, `expiresAt` is set/absent consistently with that
+    status, and `bookingNumber`/`lookupToken` are present and correctly
+    typed. A client cannot create a doc with `status: "confirmed"` or any
+    other value.
+  - `update`: **no general public update path on this collection.** Every
+    transition after creation (approval, rejection, payment verification,
+    cancellation) is admin-only or handled by the narrowly-scoped self-cancel
+    rule defined under `bookings` below — `bookingSlots` is kept in sync by
+    the *same authenticated/rule-permitted operation* that updates `bookings`,
+    not by a separate public write path. A malicious client attempting to
+    directly PATCH an existing `bookingSlots` doc to `{"status":
+    "confirmed"}` must be rejected by the rules regardless of intent. The one
+    deliberate exception is the client-side expiry write described in the
+    Calendar section: a narrowly-scoped public update rule permitting *only*
+    the transition `status: "pending-payment" → "expired"`, and only when
+    `resource.data.expiresAt < request.time` and no field other than `status`
+    (and the mirrored `bookings.status`, written in the same transaction)
+    changes. This is the sole public write path on an existing document in
+    either collection.
+  - `delete`: admin-only.
+  - Public fields are strictly limited to `venue, date, slot, status,
+    bookingNumber, lookupToken, expiresAt` — no internal audit fields.
+  - **Rules cannot enforce the cross-collection consistency rule** (that
+    `bookingSlots` and `bookings` update together) — that guarantee comes only
+    from the application's transaction code. Each collection's rules must
+    independently protect against a client writing to *only one* of the two
+    documents; the deny-by-default posture above (no public update on
+    `bookingSlots`, and the equally narrow rule on `bookings` below) is what
+    makes a partial/inconsistent write impossible for a non-admin client to
+    produce, not the transaction alone.
 - `bookings`:
   - `create`: public, but rule-constrained — `status` must be exactly
     `pending-payment` or `pending-approval` on create, all required fields
@@ -307,26 +383,24 @@ usability regression relative to requiring it.
     `pending-payment`. No other transition is reachable without admin auth.
 - `bookingEvents`: `create` alongside the transitions above; `get`/`list`
   admin-only.
-- `members`, `blockedDates`, `settings`: read public where needed for the app
-  to function (membership verification, calendar/booking validation, EmailJS
-  config isn't itself secret); write admin-only.
+- `members`: `get`/`list`/`create`/`update`/`delete` **admin-only** — full PII,
+  never exposed to the public client. This closes a gap the reference site
+  has (there, the full member directory is downloaded client-side).
+- `membersPublic`: `get`/`list` public (only `empIdHash`/`isMember`, no PII);
+  `create`/`update`/`delete` admin-only, and only ever written by the admin
+  panel's Excel-upload flow alongside the matching `members` doc.
+- `blockedDates`, `settings`: read public where needed for the app to function
+  (calendar/booking validation, EmailJS config isn't itself secret); write
+  admin-only.
 
 **Accepted limitation:** there is no per-user authentication layer for regular
 users (only admins authenticate). This is why `bookings` has no public `list`
 — without proving "you are this Employee ID / this phone number," any
 Firestore rule permitting a public filtered query is equivalent to permitting
-anyone to browse by guessing the filter value. The Booking-Number-only lookup
-above is the mitigation: it requires knowing an effectively-unguessable token
-rather than a structured, possibly-guessable Employee ID.
-
-**Members list exposure (unchanged from reference, explicitly not solved by
-this spec):** the membership-verification step downloads the full `members`
-collection (empId, name, phone) to the client to run a local `.find()`. This
-means anyone can read the full member directory via devtools. Fixing this
-would require either per-user auth or a Cloud Function to do the lookup
-server-side — both ruled out for this pass per the "replicate faithfully,
-harden later" decision on the booking-flow gaps. Documented here so it isn't
-mistaken for an oversight.
+anyone to browse by guessing the filter value. The lookup-token-based status
+lookup above is the mitigation: it requires knowing an effectively-unguessable
+128-bit token rather than a structured, possibly-guessable Employee ID or
+booking number.
 
 ## Testing
 
