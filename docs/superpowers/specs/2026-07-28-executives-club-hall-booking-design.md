@@ -302,7 +302,15 @@ documented above as short/guessable by design, not a secret). Concretely:
    This link is the only way a user reaches their own booking's status page.
 2. That page queries `bookingSlots.where('lookupToken', '==', token)` (public,
    no PII) to resolve the doc ID, then `bookings.doc(id).get()` (public
-   single-doc get) to fetch and display the full record.
+   single-doc get) to fetch and display the full record. **The status page's
+   URL/UI must only ever accept a `token` parameter, never a raw document ID
+   directly** (i.e. never `?id=<firestoreDocId>` read straight into
+   `bookings.doc(id).get()`) — the token-resolution step is what makes the
+   lookup safe, and must not be bypassable by a client that already knows or
+   guesses a doc ID. A single-field `where('lookupToken', '==', ...)` query
+   works without a composite index; if this query later grows an additional
+   filter (e.g. status), a composite index will need to be created in the
+   Firebase console at that time.
 3. Booking Number is still shown everywhere (confirmation, slip, emails) as a
    human-friendly reference for phone/in-person conversations with the
    office — but it is not a valid input anywhere in the self-service lookup
