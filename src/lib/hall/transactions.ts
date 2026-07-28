@@ -11,7 +11,7 @@ import {
 import { db } from "./firebase";
 import { calculateBookingFee } from "./fees";
 import { generateBookingNumber, generateLookupToken } from "./crypto";
-import { isBlockingSlot } from "./conflict";
+import { isBlockingSlot, isExpiredPendingPayment } from "./conflict";
 import { slotDocId, otherSlot } from "./slotKey";
 import { PENDING_PAYMENT_TIMEOUT_MS } from "./constants";
 import { logBookingEvent } from "./events";
@@ -132,4 +132,38 @@ export async function createBooking(input: CreateBookingInput): Promise<CreateBo
   });
 
   return { bookingId, bookingNumber, lookupToken, status };
+}
+
+export async function submitUtr(bookingId: string, utr: string): Promise<void> {
+  const duplicateQuery = query(collection(db, "bookings"), where("utr", "==", utr));
+  const duplicateSnap = await getDocs(duplicateQuery);
+  const hasDuplicate = duplicateSnap.docs.some(
+    (d) => d.id !== bookingId && d.data().status !== "cancelled",
+  );
+  if (hasDuplicate) {
+    throw new Error("UTR_ALREADY_USED");
+  }
+
+  const bookingRef = doc(db, "bookings", bookingId);
+
+  await runTransaction(db, async (tx) => {
+    const bookingSnap = await tx.get(bookingRef);
+    if (!bookingSnap.exists()) throw new Error("NOT_FOUND");
+    const data = bookingSnap.data();
+    if (data.status !== "pending-payment") throw new Error("INVALID_STATE");
+    if (isExpiredPendingPayment(data.status, data.expiresAt, Date.now())) {
+      throw new Error("EXPIRED");
+    }
+    // bookingSlots is keyed by venue|date|slot, not by bookingId — see Task 6's note on
+    // why the deterministic key is what makes createBooking's conflict check atomic.
+    const slotRef = doc(db, "bookingSlots", slotDocId(data.venue, data.date, data.slot));
+
+    tx.update(bookingRef, {
+      status: "pending-verification",
+      utr,
+      updatedAt: serverTimestamp(),
+    });
+    tx.update(slotRef, { status: "pending-verification" });
+    logBookingEvent(tx, bookingId, "PAYMENT_SUBMITTED", "pending-payment", "pending-verification", "user");
+  });
 }
