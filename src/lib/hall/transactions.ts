@@ -222,3 +222,49 @@ export async function rejectApproval(bookingId: string): Promise<void> {
     logBookingEvent(tx, bookingId, "REJECTED", "pending-approval", "cancelled", adminEmail);
   });
 }
+
+export async function verifyPayment(bookingId: string): Promise<void> {
+  const adminEmail = requireAdminEmail();
+  const bookingRef = doc(db, "bookings", bookingId);
+
+  await runTransaction(db, async (tx) => {
+    const snap = await tx.get(bookingRef);
+    if (!snap.exists()) throw new Error("NOT_FOUND");
+    const data = snap.data();
+    if (data.status !== "pending-verification") throw new Error("INVALID_STATE");
+    const slotRef = doc(db, "bookingSlots", slotDocId(data.venue, data.date, data.slot));
+
+    tx.update(bookingRef, {
+      status: "confirmed",
+      paymentVerifiedBy: adminEmail,
+      paymentVerifiedAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+    tx.update(slotRef, { status: "confirmed" });
+    logBookingEvent(tx, bookingId, "PAYMENT_VERIFIED", "pending-verification", "confirmed", adminEmail);
+  });
+}
+
+export async function rejectPayment(bookingId: string): Promise<void> {
+  const adminEmail = requireAdminEmail();
+  const bookingRef = doc(db, "bookings", bookingId);
+
+  await runTransaction(db, async (tx) => {
+    const snap = await tx.get(bookingRef);
+    if (!snap.exists()) throw new Error("NOT_FOUND");
+    const data = snap.data();
+    if (data.status !== "pending-verification") throw new Error("INVALID_STATE");
+    const slotRef = doc(db, "bookingSlots", slotDocId(data.venue, data.date, data.slot));
+
+    tx.update(bookingRef, {
+      status: "cancelled",
+      cancelledBy: "admin",
+      rejectedBy: adminEmail,
+      rejectedAt: serverTimestamp(),
+      cancelledAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+    tx.update(slotRef, { status: "cancelled" });
+    logBookingEvent(tx, bookingId, "REJECTED", "pending-verification", "cancelled", adminEmail);
+  });
+}
