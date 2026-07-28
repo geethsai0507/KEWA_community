@@ -1,6 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Icon, SiteHeader, SiteFooter } from "@/components/site-chrome";
+import { VENUES } from "@/lib/hall/constants";
+import { subscribeToCalendar, type DayStatus } from "@/lib/hall/calendar";
 
 export const Route = createFileRoute("/hall")({
   head: () => ({
@@ -79,68 +81,92 @@ function HallPage() {
 }
 
 function CalendarPanel() {
-  const cells = useMemo(() => {
-    // Deterministic pseudo-random so SSR + hydration agree.
-    return Array.from({ length: 31 }, (_, i) => {
-      const day = i + 1;
-      const isWeekend = day % 7 === 6 || day % 7 === 0;
-      const r = (day * 9301 + 49297) % 233280;
-      const n = r / 233280;
-      const status = n > 0.7 ? "full" : n > 0.4 ? "morning" : "free";
-      return { day, isWeekend, status };
-    });
-  }, []);
+  const [venue, setVenue] = useState<string>(VENUES[0].name);
+  const [cursor, setCursor] = useState(() => new Date());
+  const [byDate, setByDate] = useState<Record<string, { Morning: DayStatus; Evening: DayStatus }>>({});
+
+  useEffect(() => {
+    const unsubscribe = subscribeToCalendar(venue, cursor.getFullYear(), cursor.getMonth(), setByDate);
+    return unsubscribe;
+  }, [venue, cursor]);
+
+  const year = cursor.getFullYear();
+  const month = cursor.getMonth();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const firstWeekday = new Date(year, month, 1).getDay();
+
+  const dayCell = (day: number) => {
+    const dateStr = `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+    const status = byDate[dateStr] ?? { Morning: "available" as DayStatus, Evening: "available" as DayStatus };
+    return (
+      <div key={day} className="bg-surface p-4 min-h-[120px] relative group hover:bg-surface-variant transition-colors">
+        <span className="font-headline text-headline-md text-primary opacity-30">{day}</span>
+        <div className="absolute bottom-4 left-4 flex gap-1">
+          {(["Morning", "Evening"] as const).map((slot) => (
+            <div
+              key={slot}
+              className={`w-4 h-4 rounded-full ${
+                status[slot] === "confirmed"
+                  ? "status-dot-full"
+                  : status[slot] === "held"
+                    ? "status-dot-evening"
+                    : status[slot] === "pending"
+                      ? "status-dot-morning"
+                      : status[slot] === "blocked"
+                        ? "bg-on-surface/40"
+                        : "border border-primary"
+              }`}
+              title={`${slot}: ${status[slot]}`}
+            />
+          ))}
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div className="space-y-md">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <h2 className="font-headline text-headline-lg text-primary">Availability Calendar</h2>
         <div className="flex flex-wrap gap-4 items-center">
-          <button className="brutalist-button bg-secondary-container text-on-surface px-4 py-2 font-ui-button border-2 border-primary flex items-center gap-2 hover:bg-primary hover:text-on-primary transition-all">
-            <Icon name="event_repeat" /> Find me a free Saturday
-          </button>
+          <select
+            value={venue}
+            onChange={(e) => setVenue(e.target.value)}
+            className="p-2 border-2 border-primary bg-surface font-ui-button"
+          >
+            {VENUES.map((v) => (
+              <option key={v.name} value={v.name}>{v.name}</option>
+            ))}
+          </select>
+          <div className="flex items-center gap-2">
+            <button
+              className="px-3 py-1 border-2 border-primary"
+              onClick={() => setCursor(new Date(year, month - 1, 1))}
+            >
+              ←
+            </button>
+            <span className="font-bold">{cursor.toLocaleDateString("en-IN", { month: "long", year: "numeric" })}</span>
+            <button
+              className="px-3 py-1 border-2 border-primary"
+              onClick={() => setCursor(new Date(year, month + 1, 1))}
+            >
+              →
+            </button>
+          </div>
           <div className="flex items-center gap-4 text-label-md">
-            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full status-dot-morning"></span> Morning</span>
-            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full status-dot-evening"></span> Evening</span>
-            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full status-dot-full"></span> Booked</span>
+            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full status-dot-morning"></span> Pending approval</span>
+            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full status-dot-evening"></span> Held (payment window)</span>
+            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full status-dot-full"></span> Confirmed</span>
           </div>
         </div>
       </div>
 
-      <div className="hidden md:grid grid-cols-7 border-2 border-primary bg-primary gap-[2px]">
-        {["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].map((d) => (
+      <div className="grid grid-cols-7 border-2 border-primary bg-primary gap-[2px]">
+        {["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map((d) => (
           <div key={d} className="bg-primary-container text-on-primary p-3 text-center font-bold uppercase text-xs">{d}</div>
         ))}
-        {cells.map((c) => (
-          <div key={c.day} className="bg-surface p-4 min-h-[120px] relative group hover:bg-surface-variant transition-colors cursor-pointer">
-            <span className="font-headline text-headline-md text-primary opacity-30">{c.day}</span>
-            <div className="absolute bottom-4 left-4 flex gap-1">
-              {c.status === "full" && <div className="w-4 h-4 rounded-full status-dot-full" />}
-              {c.status === "morning" && <div className="w-4 h-4 rounded-full status-dot-morning" />}
-              {c.status === "free" && <div className="w-2 h-2 rounded-full border border-primary" />}
-            </div>
-            {c.isWeekend && (
-              <span className="absolute top-2 right-2 text-[10px] font-bold text-secondary uppercase">Weekend</span>
-            )}
-          </div>
-        ))}
-      </div>
-
-      <div className="md:hidden space-y-4">
-        <div className="brutalist-card p-4 bg-surface flex justify-between items-center">
-          <div>
-            <div className="font-headline text-primary">Dec 14, Saturday</div>
-            <div className="text-sm opacity-70">Morning Available • Evening Booked</div>
-          </div>
-          <button className="bg-primary text-on-primary px-4 py-2 font-ui-button">Book</button>
-        </div>
-        <div className="brutalist-card p-4 bg-surface flex justify-between items-center grayscale opacity-50">
-          <div>
-            <div className="font-headline text-primary">Dec 15, Sunday</div>
-            <div className="text-sm opacity-70">Fully Booked</div>
-          </div>
-          <Icon name="lock" className="text-error" />
-        </div>
+        {Array.from({ length: firstWeekday }, (_, i) => <div key={`pad-${i}`} className="bg-surface" />)}
+        {Array.from({ length: daysInMonth }, (_, i) => dayCell(i + 1))}
       </div>
     </div>
   );
