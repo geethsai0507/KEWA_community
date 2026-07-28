@@ -178,7 +178,12 @@ git commit -m "Add Firebase/EmailJS deps and Vitest scaffolding for hall booking
 
 - [ ] **Step 1: Write `firestore.rules`**
 
-**Note (security-review correction, applied before this task was ever executed against a real project):** the version below already reflects a fix to two real vulnerabilities a background security review caught in an earlier draft: (1) `bookingSlots` originally carried a `bookingId` pointer field, and since that collection is publicly `list`-able (needed for the calendar) while Firestore rules cannot redact individual fields from a list response, anyone could harvest every `bookingId` and read full PII via `bookings`' public get-by-id — and, worse, use a harvested `bookingId` to self-cancel *other people's* bookings, since the self-cancel rule only checks the transition shape, not identity. (2) `bookingEvents`' create rule accepted any `performedBy` value, letting an unauthenticated caller forge audit-log entries attributed to an arbitrary admin. Both are fixed below: `bookingSlots` now carries no pointer of any kind, and a new `bookingLookup/{lookupToken}` collection (keyed by the token itself, `get`-only) is the sole public channel from token to `bookingId`. `bookingEvents`' create rule now restricts unauthenticated writes to `performedBy: 'user' | 'system'` and admin writes to the actual signed-in admin's email. A third fix bounds `expiresAt` on create so a forged create can't squat a slot indefinitely.
+**Note (security-review corrections, applied across multiple passes before/during Tasks 6–13):** the version below reflects fixes to several real issues caught by a background security review and a follow-up critical-review pass:
+1. `bookingSlots` originally carried a `bookingId` pointer field, and since that collection is publicly `list`-able (needed for the calendar) while Firestore rules cannot redact individual fields from a list response, anyone could harvest every `bookingId` and read full PII via `bookings`' public get-by-id — and, worse, use a harvested `bookingId` to self-cancel *other people's* bookings, since the self-cancel rule only checks the transition shape, not identity. Fixed: `bookingSlots` carries no pointer of any kind; a new `bookingLookup/{lookupToken}` collection (keyed by the token itself, `get`-only) is the sole public channel from token to `bookingId`.
+2. `bookingEvents`' create rule accepted any `performedBy` value, letting an unauthenticated caller forge audit-log entries attributed to an arbitrary admin. Fixed: unauthenticated writes may only attribute `'user'`/`'system'`; admin-attributed events must match the actual signed-in admin's email.
+3. `expiresAt` was unbounded on create, so a forged create could claim an artificially distant expiry and squat a slot indefinitely. Fixed: bounded to ~20 minutes out.
+4. The public "expire a stale slot" update exception was later removed entirely (expiry is now an admin-only sweep, see Task 12/20's design notes) since the calendar no longer has a safe way to trigger it — an unused public write permission is pure attack surface with no functional benefit.
+5. **`submitUtr`'s transition had no rules exception at all** in an early draft of Tasks 6–13 — this would have either blocked the entire payment-submission flow outright (rules fail closed) or, if scoped too loosely, let a client smuggle in unrelated field changes (e.g. `amount`, `paymentVerifiedBy`) disguised as a UTR submission. Fixed: a narrowly-scoped exception restricted to `status: pending-payment → pending-verification`, requiring the payment window hasn't already passed (`expiresAt > request.time`, enforced here — not just client-side, so a client can't submit past expiry by writing directly) and a plausible `utr` (string, ≥6 chars), with the diff restricted to exactly `['status', 'utr', 'updatedAt']`.
 
 ```
 rules_version = '2';
@@ -216,14 +221,21 @@ service cloud.firestore {
     // booking (see bookings/{bookingId} below) since that rule only checks the transition
     // shape, not identity — the actual authorization boundary is "you can't discover the ID
     // in the first place."
+    // submitUtr's transition (pending-payment -> pending-verification, the user claiming
+    // they've paid) needs a narrowly-scoped public exception: the payment window must not
+    // have already passed (resource.data.expiresAt > request.time — enforced here, not just
+    // client-side, otherwise a client could submit a UTR after expiry by writing directly),
+    // and the diff is restricted to status only, so this can't be smuggled in alongside any
+    // other field change. Expiring a stale slot (status -> expired) is admin-only — see the
+    // note below on why that's no longer a public write path.
     match /bookingSlots/{slotId} {
       allow get, list: if true;
       allow create: if isCreateFieldsValid();
       allow update: if isAdmin()
         || (
           resource.data.status == 'pending-payment'
-          && request.resource.data.status == 'expired'
-          && resource.data.expiresAt < request.time
+          && request.resource.data.status == 'pending-verification'
+          && resource.data.expiresAt > request.time
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
         );
       allow delete: if isAdmin();
@@ -252,10 +264,12 @@ service cloud.firestore {
         )
         || (
           resource.data.status == 'pending-payment'
-          && request.resource.data.status == 'expired'
-          && resource.data.expiresAt < request.time
+          && request.resource.data.status == 'pending-verification'
+          && resource.data.expiresAt > request.time
+          && request.resource.data.utr is string
+          && request.resource.data.utr.size() >= 6
           && request.resource.data.diff(resource.data).affectedKeys()
-               .hasOnly(['status', 'updatedAt'])
+               .hasOnly(['status', 'utr', 'updatedAt'])
         );
       allow delete: if isAdmin();
     }
@@ -345,6 +359,10 @@ Using the Firebase Console's Rules Playground (or `firebase emulators:start` if 
 12. Unauthenticated `create` on `bookingEvents` with `performedBy: "some-admin@example.com"` (not actually signed in) → **denied**. The same create with `performedBy: "user"` → **allowed**.
 13. Unauthenticated `update` on `bookingSlots/{id}` or `bookings/{id}` attempting to set `status: "expired"` → **denied** (this is now admin-only, see Task 12/20's design note — there is no public expiry-write path left).
 14. Unauthenticated `create` on `bookings` with `expiresAt` set to e.g. 2 hours in the future → **denied** (the ~20-minute bound in `isCreateFieldsValid`).
+15. Unauthenticated `update` on a `bookings/{id}` currently `pending-payment` (with `expiresAt` still in the future), changing only `status → pending-verification` + `utr: "ABCD123456"` + `updatedAt` → **allowed** (the mirrored `bookingSlots` update, same transition, same diff restricted to `status` → **allowed**).
+16. Same as 15 but the booking's `expiresAt` has already passed → **denied**.
+17. Same transition as 15 but also sneaking in a change to `amount` (or any other field outside `['status', 'utr', 'updatedAt']`) → **denied** (the `diff().affectedKeys().hasOnly(...)` guard).
+18. Same transition as 15 but with `utr` shorter than 6 characters, or missing entirely → **denied**.
 
 - [ ] **Step 5: Commit**
 
@@ -2881,7 +2899,7 @@ Run: `bunx firebase-tools deploy --only firestore:rules` (requires `firebase log
 
 - [ ] **Step 4: Run the Task 2 security-rules manual checklist**
 
-Execute all 14 scenarios listed in Task 2, Step 4, against the real deployed rules using the Rules Playground in the Firebase Console. Fix and redeploy if any scenario doesn't match the expected outcome.
+Execute all 18 scenarios listed in Task 2, Step 4, against the real deployed rules using the Rules Playground in the Firebase Console. Fix and redeploy if any scenario doesn't match the expected outcome.
 
 - [ ] **Step 5: Create the admin account**
 
@@ -2940,4 +2958,6 @@ git commit -m "Document hall booking deployment steps and finalize Firebase proj
 3. A separate review pass flagged `hashEmployeeId` (Task 4, then named `sha256Hex`) for hashing low-entropy Employee IDs (`EMP00001`-`EMP99999`) with a single unsalted SHA-256 pass — an attacker could precompute the entire keyspace almost instantly. Fixed with PBKDF2 (100,000 iterations) to substantially raise brute-force cost. This is disclosed as raising cost, not eliminating feasibility, since no server exists in this backend-free architecture to hold a secret pepper.
 
 Every task from 6 onward in this document already reflects these corrections; Tasks 1–5's already-committed code and this plan document were both amended together rather than left inconsistent.
+
+**A third correction, found by a second automated background security review (of the Task 6–10 commit) after Tasks 1–10 were implemented in code:** the `firestore.rules` written in Task 2 had no update exception at all for `submitUtr`'s transition (`pending-payment → pending-verification`, the user claiming they've paid). As written, this meant either the entire payment-submission step of the booking flow would have been silently rejected by Firestore in production (rules fail closed — nothing in the client code would have caught this until real-world testing against a deployed project), or, had a looser rule been added reactively without care, a client could have smuggled in unrelated field changes (e.g. `amount`, `paymentVerifiedBy`) disguised as a UTR submission. Fixed with a narrowly-scoped exception: the payment window must not have already passed (`expiresAt > request.time`, checked in the rule itself — not only client-side, so a client can't bypass the 15-minute window by writing directly), `utr` must be a plausible string (≥6 characters, matching the client-side validation), and the diff is restricted to exactly `status`/`utr`/`updatedAt` on `bookings` and `status` on `bookingSlots`. This is applied retroactively to Task 2's rules text and its manual verification checklist (now 18 scenarios, up from 8) — a reminder that rules changes deserve the same scrutiny as the transaction code that depends on them, and that "no rule exists for this write" is just as much a bug as "the rule is too permissive."
 

@@ -37,10 +37,22 @@ service cloud.firestore {
     // from the authenticated admin panel, which already holds bookingIds via its own
     // privileged bookings.list() access) — there is no public write path for this transition,
     // since the calendar no longer triggers it client-side (see Task 12's design note).
+    // submitUtr's transition (pending-payment -> pending-verification, the user claiming
+    // they've paid) also needs a narrowly-scoped public exception: the payment window must
+    // not have already passed (resource.data.expiresAt > request.time — enforced here, not
+    // just client-side, otherwise a client could submit a UTR after expiry by writing
+    // directly), and the diff is restricted to status only, so this can't be smuggled in
+    // alongside any other field change.
     match /bookingSlots/{slotId} {
       allow get, list: if true;
       allow create: if isCreateFieldsValid();
-      allow update: if isAdmin();
+      allow update: if isAdmin()
+        || (
+          resource.data.status == 'pending-payment'
+          && request.resource.data.status == 'pending-verification'
+          && resource.data.expiresAt > request.time
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
+        );
       allow delete: if isAdmin();
     }
 
@@ -64,6 +76,15 @@ service cloud.firestore {
           && request.resource.data.cancelledBy == 'user'
           && request.resource.data.diff(resource.data).affectedKeys()
                .hasOnly(['status', 'cancelledBy', 'cancelledAt', 'updatedAt'])
+        )
+        || (
+          resource.data.status == 'pending-payment'
+          && request.resource.data.status == 'pending-verification'
+          && resource.data.expiresAt > request.time
+          && request.resource.data.utr is string
+          && request.resource.data.utr.size() >= 6
+          && request.resource.data.diff(resource.data).affectedKeys()
+               .hasOnly(['status', 'utr', 'updatedAt'])
         );
       allow delete: if isAdmin();
     }
