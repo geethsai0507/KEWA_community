@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { generateBookingNumber, generateLookupToken, sha256Hex } from "./crypto";
+import { generateBookingNumber, generateLookupToken, hashEmployeeId } from "./crypto";
 
 describe("generateBookingNumber", () => {
   it("matches the EC-XXXXXX format", () => {
@@ -23,21 +23,24 @@ describe("generateLookupToken", () => {
   });
 });
 
-describe("sha256Hex", () => {
-  it("hashes a known input to the known SHA-256 hex digest", async () => {
-    // SHA-256("EMP12345") precomputed
-    const hash = await sha256Hex("EMP12345");
-    expect(hash).toBe("a5f2b6a3f7f2e6c8f0f1c4b2c9a6d3e1f4a7c0b3e6d9f2a5c8b1e4d7a0c3f6b9".length === 64 ? hash : hash);
+describe("hashEmployeeId", () => {
+  it("produces a 64-character hex digest (256 bits)", async () => {
+    const hash = await hashEmployeeId("EMP12345");
     expect(hash).toMatch(/^[0-9a-f]{64}$/);
   });
   it("is deterministic for the same input", async () => {
-    const a = await sha256Hex("EMP12345");
-    const b = await sha256Hex("EMP12345");
+    const a = await hashEmployeeId("EMP12345");
+    const b = await hashEmployeeId("EMP12345");
     expect(a).toBe(b);
   });
   it("normalizes case/whitespace before hashing so lookups are consistent", async () => {
-    const a = await sha256Hex("emp12345");
-    const b = await sha256Hex("EMP12345");
+    const a = await hashEmployeeId("emp12345");
+    const b = await hashEmployeeId("EMP12345");
     expect(a).toBe(b);
+  });
+  it("produces different hashes for different employee IDs", async () => {
+    const a = await hashEmployeeId("EMP12345");
+    const b = await hashEmployeeId("EMP99999");
+    expect(a).not.toBe(b);
   });
 });

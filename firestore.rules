@@ -6,19 +6,36 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    // Shared field checks for bookingSlots/bookings create. expiresAt is bounded to at most
+    // ~20 minutes out (the 15-minute payment window plus slack) so a forged create can't
+    // squat a slot indefinitely by claiming an artificially distant expiry.
     function isCreateFieldsValid() {
       let d = request.resource.data;
       return d.status in ['pending-payment', 'pending-approval']
         && d.venue is string && d.date is string && d.slot in ['Morning', 'Evening']
-        && d.bookingNumber is string && d.lookupToken is string;
+        && (
+          (d.status == 'pending-approval' && d.expiresAt == null)
+          || (
+            d.status == 'pending-payment'
+            && d.expiresAt is timestamp
+            && d.expiresAt > request.time
+            && d.expiresAt < request.time + duration.value(20, 'm')
+          )
+        );
     }
 
+    // Public availability layer only: venue/date/slot/status/expiresAt. Deliberately carries
+    // NO pointer (bookingId, lookupToken, bookingNumber) to the private bookings record —
+    // this collection is publicly listable (the calendar needs it), and Firestore rules
+    // cannot redact individual fields from a list response. Any pointer field here would let
+    // anyone who lists this collection harvest it and read full PII via bookings' public
+    // get-by-id, and would also let them forge the self-cancel transition on someone else's
+    // booking (see bookings/{bookingId} below) since that rule only checks the transition
+    // shape, not identity — the actual authorization boundary is "you can't discover the ID
+    // in the first place."
     match /bookingSlots/{slotId} {
       allow get, list: if true;
-      // bookingSlots is keyed by a deterministic venue|date|slot ID (see Task 6), not the
-      // random bookingId, so each doc also needs its own bookingId field as a pointer to
-      // the matching bookings/{bookingId} record.
-      allow create: if isCreateFieldsValid() && request.resource.data.bookingId is string;
+      allow create: if isCreateFieldsValid();
       allow update: if isAdmin()
         || (
           resource.data.status == 'pending-payment'
@@ -29,10 +46,15 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    // Private PII record. get-by-known-ID is public (this is the capability boundary — see
+    // bookingLookup below for the only sanctioned way to learn a bookingId without already
+    // being its creator or an admin). list is admin-only: there is no public query path here.
     match /bookings/{bookingId} {
       allow get: if true;
       allow list: if isAdmin();
       allow create: if isCreateFieldsValid()
+        && request.resource.data.bookingNumber is string
+        && request.resource.data.lookupToken is string
         && !('cancelledBy' in request.resource.data)
         && !('approvedBy' in request.resource.data)
         && !('paymentVerifiedBy' in request.resource.data)
@@ -55,8 +77,26 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    // The ONLY public channel from "I hold this lookupToken" to "here is the bookingId."
+    // Document ID is the token itself, so resolving it is a get() (by a value you must
+    // already know), never a list() — this is what keeps bookingId non-enumerable even
+    // though bookings.get() is public. list is admin-only (no legitimate public need for it).
+    match /bookingLookup/{lookupToken} {
+      allow get: if true;
+      allow list: if isAdmin();
+      allow create: if request.resource.data.keys().hasOnly(['bookingId'])
+        && request.resource.data.bookingId is string
+        && exists(/databases/$(database)/documents/bookings/$(request.resource.data.bookingId));
+      allow update, delete: if isAdmin();
+    }
+
+    // performedBy can't be forged as an arbitrary admin identity: unauthenticated writers may
+    // only attribute an event to 'user' or 'system' (matching what the app's own code does for
+    // self-service actions), and an admin-attributed event must match the actual signed-in
+    // admin's email — otherwise the audit trail could be forged by anyone.
     match /bookingEvents/{eventId} {
-      allow create: if true;
+      allow create: if request.resource.data.performedBy in ['user', 'system']
+        || (isAdmin() && request.resource.data.performedBy == request.auth.token.email);
       allow get, list: if isAdmin();
       allow update, delete: if false;
     }
