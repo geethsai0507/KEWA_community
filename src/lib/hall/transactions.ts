@@ -1,6 +1,7 @@
 import {
   collection,
   doc,
+  getDoc,
   getDocs,
   query,
   runTransaction,
@@ -15,7 +16,13 @@ import { isBlockingSlot, isExpiredPendingPayment } from "./conflict";
 import { slotDocId, otherSlot } from "./slotKey";
 import { PENDING_PAYMENT_TIMEOUT_MS } from "./constants";
 import { logBookingEvent } from "./events";
-import type { BookingStatus, Slot } from "./types";
+import {
+  sendApprovalNeededEmail,
+  sendPaymentInstructionsEmail,
+  sendConfirmedEmail,
+  sendCancelledEmail,
+} from "./email";
+import type { BookingDoc, BookingStatus, Slot } from "./types";
 
 function requireAdminEmail(): string {
   const email = auth.currentUser?.email;
@@ -144,6 +151,14 @@ export async function createBooking(input: CreateBookingInput): Promise<CreateBo
     return resolvedStatus;
   });
 
+  const bookingSnapForEmail = await getDoc(bookingRef);
+  const bookingForEmail = { ...bookingSnapForEmail.data(), bookingId } as BookingDoc & { bookingId: string };
+  if (status === "pending-approval") {
+    void sendApprovalNeededEmail(bookingForEmail);
+  } else {
+    void sendPaymentInstructionsEmail(bookingForEmail);
+  }
+
   return { bookingId, bookingNumber, lookupToken, status };
 }
 
@@ -204,6 +219,9 @@ export async function approveBooking(bookingId: string): Promise<void> {
     tx.update(slotRef, { status: "pending-payment", expiresAt });
     logBookingEvent(tx, bookingId, "APPROVED", "pending-approval", "pending-payment", adminEmail);
   });
+
+  const snapForEmail = await getDoc(bookingRef);
+  void sendPaymentInstructionsEmail({ ...snapForEmail.data(), bookingId } as BookingDoc & { bookingId: string });
 }
 
 export async function rejectApproval(bookingId: string): Promise<void> {
@@ -228,6 +246,9 @@ export async function rejectApproval(bookingId: string): Promise<void> {
     tx.update(slotRef, { status: "cancelled" });
     logBookingEvent(tx, bookingId, "REJECTED", "pending-approval", "cancelled", adminEmail);
   });
+
+  const snapForEmail = await getDoc(bookingRef);
+  void sendCancelledEmail({ ...snapForEmail.data(), bookingId } as BookingDoc & { bookingId: string }, "admin-rejected-approval");
 }
 
 export async function verifyPayment(bookingId: string): Promise<void> {
@@ -250,6 +271,9 @@ export async function verifyPayment(bookingId: string): Promise<void> {
     tx.update(slotRef, { status: "confirmed" });
     logBookingEvent(tx, bookingId, "PAYMENT_VERIFIED", "pending-verification", "confirmed", adminEmail);
   });
+
+  const snapForEmail = await getDoc(bookingRef);
+  void sendConfirmedEmail({ ...snapForEmail.data(), bookingId } as BookingDoc & { bookingId: string });
 }
 
 export async function rejectPayment(bookingId: string): Promise<void> {
@@ -274,6 +298,9 @@ export async function rejectPayment(bookingId: string): Promise<void> {
     tx.update(slotRef, { status: "cancelled" });
     logBookingEvent(tx, bookingId, "REJECTED", "pending-verification", "cancelled", adminEmail);
   });
+
+  const snapForEmail = await getDoc(bookingRef);
+  void sendCancelledEmail({ ...snapForEmail.data(), bookingId } as BookingDoc & { bookingId: string }, "admin-rejected-payment");
 }
 
 export async function cancelBookingSelf(bookingId: string): Promise<void> {
@@ -307,6 +334,9 @@ export async function cancelBookingSelf(bookingId: string): Promise<void> {
     });
     logBookingEvent(tx, bookingId, "CANCELLED", status, "cancelled", "user");
   });
+
+  const snapForEmail = await getDoc(bookingRef);
+  void sendCancelledEmail({ ...snapForEmail.data(), bookingId } as BookingDoc & { bookingId: string }, "self-cancelled");
 }
 
 export async function cancelBookingAdmin(bookingId: string): Promise<void> {
@@ -346,5 +376,10 @@ export async function expireStaleBooking(bookingId: string): Promise<void> {
     tx.update(bookingRef, { status: "expired", updatedAt: serverTimestamp() });
     tx.update(slotRef, { status: "expired" });
     logBookingEvent(tx, bookingId, "EXPIRED", "pending-payment", "expired", "system");
+    // Reading the doc again outside the transaction for the email is intentional — emails are
+    // non-transactional side effects and must not be part of the atomic write.
+    void getDoc(bookingRef).then((s) =>
+      sendCancelledEmail({ ...s.data(), bookingId } as BookingDoc & { bookingId: string }, "expired"),
+    );
   });
 }
