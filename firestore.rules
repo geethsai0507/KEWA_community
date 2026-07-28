@@ -1,0 +1,83 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isAdmin() {
+      return request.auth != null;
+    }
+
+    function isCreateFieldsValid() {
+      let d = request.resource.data;
+      return d.status in ['pending-payment', 'pending-approval']
+        && d.venue is string && d.date is string && d.slot in ['Morning', 'Evening']
+        && d.bookingNumber is string && d.lookupToken is string;
+    }
+
+    match /bookingSlots/{slotId} {
+      allow get, list: if true;
+      // bookingSlots is keyed by a deterministic venue|date|slot ID (see Task 6), not the
+      // random bookingId, so each doc also needs its own bookingId field as a pointer to
+      // the matching bookings/{bookingId} record.
+      allow create: if isCreateFieldsValid() && request.resource.data.bookingId is string;
+      allow update: if isAdmin()
+        || (
+          resource.data.status == 'pending-payment'
+          && request.resource.data.status == 'expired'
+          && resource.data.expiresAt < request.time
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
+        );
+      allow delete: if isAdmin();
+    }
+
+    match /bookings/{bookingId} {
+      allow get: if true;
+      allow list: if isAdmin();
+      allow create: if isCreateFieldsValid()
+        && !('cancelledBy' in request.resource.data)
+        && !('approvedBy' in request.resource.data)
+        && !('paymentVerifiedBy' in request.resource.data)
+        && !('rejectedBy' in request.resource.data);
+      allow update: if isAdmin()
+        || (
+          resource.data.status in ['confirmed', 'pending-payment']
+          && request.resource.data.status == 'cancelled'
+          && request.resource.data.cancelledBy == 'user'
+          && request.resource.data.diff(resource.data).affectedKeys()
+               .hasOnly(['status', 'cancelledBy', 'cancelledAt', 'updatedAt'])
+        )
+        || (
+          resource.data.status == 'pending-payment'
+          && request.resource.data.status == 'expired'
+          && resource.data.expiresAt < request.time
+          && request.resource.data.diff(resource.data).affectedKeys()
+               .hasOnly(['status', 'updatedAt'])
+        );
+      allow delete: if isAdmin();
+    }
+
+    match /bookingEvents/{eventId} {
+      allow create: if true;
+      allow get, list: if isAdmin();
+      allow update, delete: if false;
+    }
+
+    match /members/{memberId} {
+      allow get, list, create, update, delete: if isAdmin();
+    }
+
+    match /membersPublic/{memberId} {
+      allow get, list: if true;
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /blockedDates/{dateId} {
+      allow get, list: if true;
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /settings/{settingId} {
+      allow get, list: if true;
+      allow create, update, delete: if isAdmin();
+    }
+  }
+}
