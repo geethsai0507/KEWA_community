@@ -559,17 +559,21 @@ function RulesPanel() {
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-primary text-on-primary uppercase text-xs font-bold tracking-widest">
-                <th className="p-4">Slot</th><th className="p-4">Resident</th><th className="p-4">Guest</th>
+                <th className="p-4">Venue</th><th className="p-4">Member</th><th className="p-4">Non-Member</th>
               </tr>
             </thead>
             <tbody className="text-sm">
-              <tr className="border-b-2 border-primary/10"><td className="p-4 font-bold">Morning (8AM-2PM)</td><td className="p-4">₹3,500</td><td className="p-4">₹7,000</td></tr>
-              <tr className="border-b-2 border-primary/10 bg-surface-variant/30"><td className="p-4 font-bold">Evening (4PM-10PM)</td><td className="p-4">₹5,000</td><td className="p-4">₹9,500</td></tr>
-              <tr className="border-b-2 border-primary/10"><td className="p-4 font-bold">Full Day</td><td className="p-4">₹8,000</td><td className="p-4">₹15,000</td></tr>
+              {VENUES.map((v, i) => (
+                <tr key={v.name} className={`border-b-2 border-primary/10 ${i % 2 === 1 ? "bg-surface-variant/30" : ""}`}>
+                  <td className="p-4 font-bold">{v.name}</td>
+                  <td className="p-4">₹{v.feeMember.toLocaleString("en-IN")}</td>
+                  <td className="p-4">₹{v.feeNonMember.toLocaleString("en-IN")}</td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
-        <p className="text-sm opacity-70 italic">* Rates exclude cleaning charges (₹500 fixed) and electricity (per unit).</p>
+        <p className="text-sm opacity-70 italic">* Rate is per slot (Morning {SLOTS.Morning.time} or Evening {SLOTS.Evening.time}).</p>
       </div>
       <div className="space-y-6">
         <h2 className="font-headline text-headline-lg text-primary">Key Terms</h2>
