@@ -5,9 +5,10 @@ const SERVICE_ID = import.meta.env.VITE_EMAILJS_SERVICE_ID as string;
 const PUBLIC_KEY = import.meta.env.VITE_EMAILJS_PUBLIC_KEY as string;
 
 const TEMPLATE_APPROVAL_NEEDED = "tpl_approval_needed";
-const TEMPLATE_PAYMENT_INSTRUCTIONS = "tpl_payment_instr";
-const TEMPLATE_CONFIRMED = "tpl_confirmed";
-const TEMPLATE_CANCELLED = "tpl_cancelled";
+// EmailJS's free plan caps templates at 2, so the 3 user-facing notifications (payment
+// instructions, confirmed, cancelled) share one generic template — differentiated by the
+// subject/heading/details/link text built in JS below, not by separate template IDs.
+const TEMPLATE_USER_NOTIFY = "tpl_payment_instr";
 const ADMIN_EMAIL = import.meta.env.VITE_ADMIN_EMAIL as string;
 
 async function safeSend(templateId: string, params: Record<string, unknown>): Promise<void> {
@@ -30,24 +31,34 @@ export function sendApprovalNeededEmail(booking: BookingDoc & { bookingId: strin
 }
 
 export function sendPaymentInstructionsEmail(booking: BookingDoc & { bookingId: string }): Promise<void> {
-  return safeSend(TEMPLATE_PAYMENT_INSTRUCTIONS, {
+  const statusLink = `${window.location.origin}/hall/status?token=${booking.lookupToken}`;
+  return safeSend(TEMPLATE_USER_NOTIFY, {
     to_email: booking.email,
-    booking_number: booking.bookingNumber,
-    amount: booking.amount,
-    venue: booking.venue,
-    date: booking.date,
-    slot: booking.slot,
-    status_link: `${window.location.origin}/hall/status?token=${booking.lookupToken}`,
+    subject: `Payment Instructions: ${booking.bookingNumber}`,
+    heading: "Your hall booking is approved. Please complete payment to confirm it. Payment must be completed within 15 minutes or this booking will expire.",
+    details: [
+      `Booking Number: ${booking.bookingNumber}`,
+      `Amount: ₹${booking.amount}`,
+      `Venue: ${booking.venue}`,
+      `Date: ${booking.date}`,
+      `Slot: ${booking.slot}`,
+    ].join("\n"),
+    link: `Submit your UTR here: ${statusLink}`,
   });
 }
 
 export function sendConfirmedEmail(booking: BookingDoc & { bookingId: string }): Promise<void> {
-  return safeSend(TEMPLATE_CONFIRMED, {
+  return safeSend(TEMPLATE_USER_NOTIFY, {
     to_email: booking.email,
-    booking_number: booking.bookingNumber,
-    venue: booking.venue,
-    date: booking.date,
-    slot: booking.slot,
+    subject: `Booking Confirmed: ${booking.bookingNumber}`,
+    heading: "Your hall booking is confirmed! We look forward to seeing you.",
+    details: [
+      `Booking Number: ${booking.bookingNumber}`,
+      `Venue: ${booking.venue}`,
+      `Date: ${booking.date}`,
+      `Slot: ${booking.slot}`,
+    ].join("\n"),
+    link: "",
   });
 }
 
@@ -68,9 +79,16 @@ export function sendCancelledEmail(
   booking: BookingDoc & { bookingId: string },
   reason: CancellationReason,
 ): Promise<void> {
-  return safeSend(TEMPLATE_CANCELLED, {
+  return safeSend(TEMPLATE_USER_NOTIFY, {
     to_email: booking.email,
-    booking_number: booking.bookingNumber,
-    reason: CANCELLATION_MESSAGES[reason],
+    subject: `Booking Cancelled: ${booking.bookingNumber}`,
+    heading: CANCELLATION_MESSAGES[reason],
+    details: [
+      `Booking Number: ${booking.bookingNumber}`,
+      `Venue: ${booking.venue}`,
+      `Date: ${booking.date}`,
+      `Slot: ${booking.slot}`,
+    ].join("\n"),
+    link: "",
   });
 }
