@@ -14,7 +14,7 @@ export function SiteHeader({ active }: { active: "status" | "gatherings" | "noti
     <header className="fixed top-0 w-full z-50 flex justify-between items-center px-margin-mobile md:px-margin-desktop py-4 bg-background/90 backdrop-blur-sm border-b-2 border-primary">
       <div className="flex items-center gap-6">
         <Link to="/" className="font-display text-[32px] md:text-display-lg font-extrabold text-primary tracking-tighter">
-          KEWA
+          Executives Club
         </Link>
         <nav className="hidden lg:flex items-center gap-gutter">
           <Link to="/" className={cls("status")}>Hall Status</Link>
@@ -47,7 +47,7 @@ export function SiteFooter() {
     <footer className="bg-primary text-on-primary py-xl px-margin-mobile md:px-margin-desktop w-full overflow-hidden relative">
       <div className="grid grid-cols-1 md:grid-cols-4 gap-gutter mb-xl relative z-10">
         <div className="col-span-1 md:col-span-2">
-          <div className="font-headline text-headline-lg mb-6">KEWA Community</div>
+          <div className="font-headline text-headline-lg mb-6">Executives Club Community</div>
           <p className="font-body text-body-md opacity-80 max-w-sm mb-8">
             Fostering a vibrant, safe, and connected living environment through
             modern technology and collective action.
@@ -81,10 +81,10 @@ export function SiteFooter() {
         </div>
       </div>
       <div className="border-t border-on-primary/20 pt-lg relative z-10">
-        <p className="font-body text-body-md opacity-60">© 2024 KEWA Residential Colony. All rights reserved.</p>
+        <p className="font-body text-body-md opacity-60">© 2024 Executives Club Residential Colony. All rights reserved.</p>
       </div>
       <div className="absolute -bottom-12 md:-bottom-24 -right-12 pointer-events-none select-none opacity-20">
-        <span className="font-display text-[200px] md:text-[400px] font-extrabold tracking-tighter leading-none">KEWA</span>
+        <span className="font-display text-[120px] md:text-[280px] font-extrabold tracking-tighter leading-none">Executives Club</span>
       </div>
     </footer>
   );

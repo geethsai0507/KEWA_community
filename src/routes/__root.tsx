@@ -71,14 +71,14 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "KEWA Community Portal" },
+      { title: "Executives Club Community Portal" },
       {
         name: "description",
         content:
-          "KEWA Residential Colony — hall bookings, gatherings, notices and community moments in one connected portal.",
+          "Executives Club Residential Colony — hall bookings, gatherings, notices and community moments in one connected portal.",
       },
-      { name: "author", content: "KEWA Community" },
-      { property: "og:title", content: "KEWA Community Portal" },
+      { name: "author", content: "Executives Club Community" },
+      { property: "og:title", content: "Executives Club Community Portal" },
       {
         property: "og:description",
         content:

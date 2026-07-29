@@ -4,13 +4,13 @@ import { Icon, SiteHeader, SiteFooter } from "@/components/site-chrome";
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "KEWA Community Portal — A neighborhood for everyone" },
+      { title: "Executives Club Community Portal — A neighborhood for everyone" },
       {
         name: "description",
         content:
-          "See hall availability, upcoming gatherings, notice board updates and community moments at KEWA Residential Colony.",
+          "See hall availability, upcoming gatherings, notice board updates and community moments at Executives Club Residential Colony.",
       },
-      { property: "og:title", content: "KEWA Community Portal" },
+      { property: "og:title", content: "Executives Club Community Portal" },
       {
         property: "og:description",
         content:
@@ -101,7 +101,7 @@ function Home() {
             <div className="absolute inset-0 overflow-hidden">
               <img
                 className="hero-img w-full h-full object-cover"
-                alt="Vibrant KEWA community hall in golden hour light"
+                alt="Vibrant Executives Club community hall in golden hour light"
                 src={HERO_IMG}
               />
             </div>
@@ -155,7 +155,7 @@ function Home() {
                 Upcoming Gatherings
               </h2>
               <p className="font-body text-body-lg text-on-secondary-fixed-variant opacity-80">
-                Life in KEWA is better when shared.
+                Life in Executives Club is better when shared.
               </p>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
@@ -206,7 +206,7 @@ function Home() {
                 <div className="p-6 border-l-8 border-primary bg-white brutalist-card shadow-sm">
                   <h4 className="font-headline text-headline-md mb-2">New Security Protocols</h4>
                   <p className="font-body text-body-md text-on-surface-variant">
-                    Starting Nov 1st, all guest entries must be verified via the KEWA Resident App.
+                    Starting Nov 1st, all guest entries must be verified via the Executives Club Resident App.
                   </p>
                   <span className="font-label-md text-label-md text-outline">Posted Oct 20</span>
                 </div>
