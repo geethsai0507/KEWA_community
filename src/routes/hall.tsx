@@ -99,30 +99,35 @@ function CalendarPanel() {
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const firstWeekday = new Date(year, month, 1).getDay();
 
+  const dotForStatus = (s: DayStatus) =>
+    s === "confirmed"
+      ? "status-dot-full"
+      : s === "held"
+        ? "status-dot-evening"
+        : s === "pending"
+          ? "status-dot-morning"
+          : s === "blocked"
+            ? "bg-on-surface/40"
+            : "border border-primary";
+
+  // Most-restrictive-wins: a day shows one dot summarizing both slots, so a fully booked
+  // slot always outranks a still-available one.
+  const PRIORITY: DayStatus[] = ["confirmed", "held", "pending", "blocked", "available"];
+  const worstStatus = (status: { Morning: DayStatus; Evening: DayStatus }) =>
+    PRIORITY.find((s) => status.Morning === s || status.Evening === s) ?? "available";
+
   const dayCell = (day: number) => {
     const dateStr = `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
     const status = byDate[dateStr] ?? { Morning: "available" as DayStatus, Evening: "available" as DayStatus };
+    const overall = worstStatus(status);
     return (
       <div key={day} className="bg-surface p-4 min-h-[120px] relative group hover:bg-surface-variant transition-colors">
         <span className="font-headline text-headline-md text-primary opacity-30">{day}</span>
-        <div className="absolute bottom-4 left-4 flex gap-1">
-          {(["Morning", "Evening"] as const).map((slot) => (
-            <div
-              key={slot}
-              className={`w-4 h-4 rounded-full ${
-                status[slot] === "confirmed"
-                  ? "status-dot-full"
-                  : status[slot] === "held"
-                    ? "status-dot-evening"
-                    : status[slot] === "pending"
-                      ? "status-dot-morning"
-                      : status[slot] === "blocked"
-                        ? "bg-on-surface/40"
-                        : "border border-primary"
-              }`}
-              title={`${slot}: ${status[slot]}`}
-            />
-          ))}
+        <div className="absolute bottom-4 left-4">
+          <div
+            className={`w-4 h-4 rounded-full ${dotForStatus(overall)}`}
+            title={`Morning: ${status.Morning}, Evening: ${status.Evening}`}
+          />
         </div>
       </div>
     );
