@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
+import QRCode from "qrcode";
 import { Icon, SiteHeader, SiteFooter } from "@/components/site-chrome";
 import { VENUES, SLOTS, UPI_ID } from "@/lib/hall/constants";
 import { subscribeToCalendar, type DayStatus } from "@/lib/hall/calendar";
@@ -173,6 +174,24 @@ function CalendarPanel() {
       </div>
     </div>
   );
+}
+
+function UpiQrCode({ amount, bookingNumber }: { amount: number; bookingNumber: string }) {
+  const [dataUrl, setDataUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    const uri = `upi://pay?pa=${encodeURIComponent(UPI_ID)}&pn=${encodeURIComponent("Executives Club")}&am=${amount}&cu=INR&tn=${encodeURIComponent(bookingNumber)}`;
+    let cancelled = false;
+    QRCode.toDataURL(uri, { margin: 1, width: 220 }).then((url) => {
+      if (!cancelled) setDataUrl(url);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [amount, bookingNumber]);
+
+  if (!dataUrl) return null;
+  return <img src={dataUrl} alt="Scan to pay via UPI" width={220} height={220} className="border-2 border-primary" />;
 }
 
 type BookingStep = 1 | 2 | 3 | 4;
@@ -421,7 +440,11 @@ function BookingPanel() {
                 <h3 className="font-headline text-headline-md text-primary">Pay via UPI</h3>
                 <p>Amount: <strong>₹{calculateBookingFee(form.isMember === true, form.venue)}</strong></p>
                 <p>UPI ID: <strong>{UPI_ID}</strong></p>
-                <p className="text-sm opacity-70">Complete the payment within 15 minutes, then enter the UTR number below.</p>
+                <UpiQrCode
+                  amount={calculateBookingFee(form.isMember === true, form.venue)}
+                  bookingNumber={bookingResult.bookingNumber}
+                />
+                <p className="text-sm opacity-70">Scan the QR with any UPI app, or pay manually to the UPI ID above. Complete the payment within 15 minutes, then enter the UTR number below.</p>
                 <div className="space-y-2">
                   <label className="font-ui-button text-primary block">UTR Number</label>
                   <input type="text" value={utr} onChange={(e) => setUtr(e.target.value)} className="w-full p-4 border-2 border-primary bg-surface" />

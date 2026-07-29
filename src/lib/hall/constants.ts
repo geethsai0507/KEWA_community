@@ -12,4 +12,4 @@ export const SLOTS: Record<"Morning" | "Evening", { label: string; time: string 
 
 export const PENDING_PAYMENT_TIMEOUT_MS = 15 * 60 * 1000;
 
-export const UPI_ID = "EXECCLUB@SBI";
+export const UPI_ID = "velumula.ramgopal@okhdfcbank"; // TODO: temporary, replace with the real club UPI ID
