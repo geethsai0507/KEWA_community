@@ -25,7 +25,7 @@ export const Route = createFileRoute("/")({
 });
 
 const HERO_IMG =
-  "https://lh3.googleusercontent.com/aida-public/AB6AXuCP3MJasb6pMpDAuzcd9cpEz2I5ynlq8jiBF95ASwbAyrV_xzerVGUtYaXRqC3sB7-xNqVRHyEu3mEjOIboyilmC6GgSRVGHOjjpFKeLiDsMnPucpNP9rpggvj1iuZenV0Ff910lyASTK8qbrruIcVYBN7nQ2hQlaWbRRy0wCie9G9vq76wiMAGyyVNLvDpDRgw4wk-F9Jyv1_3QuQjdNp4YrF3msAR76B_p7-k7IjycaCXetNZZ0-wPUxEmBxc5sOlUKYneqZVAAs";
+  "https://images.unsplash.com/photo-1780402411700-96a84f2f483a?fm=jpg&q=80&w=2000";
 
 const gatherings = [
   {
@@ -170,7 +170,7 @@ function Home() {
             <div className="absolute inset-0 overflow-hidden">
               <img
                 className="hero-img w-full h-full object-cover"
-                alt="Vibrant KEWA community hall in golden hour light"
+                alt="Executives Club community hall building illuminated at night"
                 src={HERO_IMG}
               />
             </div>
