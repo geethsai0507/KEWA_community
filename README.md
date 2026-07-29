@@ -65,6 +65,17 @@ npm run dev
 
 Either way, the dev server starts at `http://localhost:8080/`.
 
+## Hall Booking Setup
+
+The `/hall` and `/admin` routes are backed by Firebase (Firestore + Auth) and EmailJS — there's no custom backend server. To run them locally:
+
+1. Create a Firebase project (Firestore in production mode, Authentication with the Email/Password provider enabled) and copy the Web App config values into a `.env` file at the repo root — see `.env.example` for the required `VITE_FIREBASE_*` variables.
+2. Create one admin user under Authentication → Users in the Firebase console (there's no self-registration UI by design), and set `VITE_ADMIN_EMAIL` in `.env` to that email.
+3. Deploy the security rules that actually enforce authorization (`firestore.rules` in the repo root — client-side checks alone aren't sufficient): `bunx firebase-tools deploy --only firestore:rules` (requires `firebase login` first).
+4. Create an [EmailJS](https://www.emailjs.com/) account, an email service, and the four templates referenced in `src/lib/hall/email.ts`, then set `VITE_EMAILJS_SERVICE_ID` and `VITE_EMAILJS_PUBLIC_KEY` in `.env`.
+
+Without this setup, `/hall` and `/admin` will fail at runtime (Firestore reads/writes rejected or misconfigured), even though the rest of the site works.
+
 ## Available scripts
 
 | Command | Bun | npm |
