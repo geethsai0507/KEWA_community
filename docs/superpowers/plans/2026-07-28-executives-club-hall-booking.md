@@ -30,7 +30,7 @@ src/lib/hall/
   constants.ts     — VENUES, SLOTS, PENDING_PAYMENT_TIMEOUT_MS
   fees.ts          — calculateBookingFee(isMember, venue)
   slotKey.ts       — slotDocId(venue, date, slot): deterministic bookingSlots doc ID; otherSlot(slot)
-  crypto.ts        — sha256Hex(input), generateLookupToken(), generateBookingNumber()
+  crypto.ts        — hashEmployeeId(input), generateLookupToken(), generateBookingNumber()
   conflict.ts       — isBlockingSlot(status, expiresAt, now), evaluateConflict(existingDocs, venue, date, slot)
   firebase.ts      — Firebase app init; exports `db`, `auth`
   events.ts        — logBookingEvent(tx, bookingId, action, oldStatus, newStatus, performedBy)
@@ -178,6 +178,13 @@ git commit -m "Add Firebase/EmailJS deps and Vitest scaffolding for hall booking
 
 - [ ] **Step 1: Write `firestore.rules`**
 
+**Note (security-review corrections, applied across multiple passes before/during Tasks 6–13):** the version below reflects fixes to several real issues caught by a background security review and a follow-up critical-review pass:
+1. `bookingSlots` originally carried a `bookingId` pointer field, and since that collection is publicly `list`-able (needed for the calendar) while Firestore rules cannot redact individual fields from a list response, anyone could harvest every `bookingId` and read full PII via `bookings`' public get-by-id — and, worse, use a harvested `bookingId` to self-cancel *other people's* bookings, since the self-cancel rule only checks the transition shape, not identity. Fixed: `bookingSlots` carries no pointer of any kind; a new `bookingLookup/{lookupToken}` collection (keyed by the token itself, `get`-only) is the sole public channel from token to `bookingId`.
+2. `bookingEvents`' create rule accepted any `performedBy` value, letting an unauthenticated caller forge audit-log entries attributed to an arbitrary admin. Fixed: unauthenticated writes may only attribute `'user'`/`'system'`; admin-attributed events must match the actual signed-in admin's email.
+3. `expiresAt` was unbounded on create, so a forged create could claim an artificially distant expiry and squat a slot indefinitely. Fixed: bounded to ~20 minutes out.
+4. The public "expire a stale slot" update exception was later removed entirely (expiry is now an admin-only sweep, see Task 12/20's design notes) since the calendar no longer has a safe way to trigger it — an unused public write permission is pure attack surface with no functional benefit.
+5. **`submitUtr`'s transition had no rules exception at all** in an early draft of Tasks 6–13 — this would have either blocked the entire payment-submission flow outright (rules fail closed) or, if scoped too loosely, let a client smuggle in unrelated field changes (e.g. `amount`, `paymentVerifiedBy`) disguised as a UTR submission. Fixed: a narrowly-scoped exception restricted to `status: pending-payment → pending-verification`, requiring the payment window hasn't already passed (`expiresAt > request.time`, enforced here — not just client-side, so a client can't submit past expiry by writing directly) and a plausible `utr` (string, ≥6 chars), with the diff restricted to exactly `['status', 'utr', 'updatedAt']`.
+
 ```
 rules_version = '2';
 service cloud.firestore {
@@ -187,33 +194,68 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    // Shared field checks for bookingSlots/bookings create. expiresAt is bounded to at most
+    // ~20 minutes out (the 15-minute payment window plus slack) so a forged create can't
+    // squat a slot indefinitely by claiming an artificially distant expiry. occupiedSince
+    // just has to be a real server timestamp — it's not a secret, only a correlation key the
+    // admin sweep uses to avoid stomping a newer booking (see bookingSlots' comment below).
     function isCreateFieldsValid() {
       let d = request.resource.data;
       return d.status in ['pending-payment', 'pending-approval']
         && d.venue is string && d.date is string && d.slot in ['Morning', 'Evening']
-        && d.bookingNumber is string && d.lookupToken is string;
+        && d.occupiedSince == request.time
+        && (
+          (d.status == 'pending-approval' && d.expiresAt == null)
+          || (
+            d.status == 'pending-payment'
+            && d.expiresAt is timestamp
+            && d.expiresAt > request.time
+            && d.expiresAt < request.time + duration.value(20, 'm')
+          )
+        );
     }
 
+    // Public availability layer only: venue/date/slot/status/expiresAt/occupiedSince.
+    // Deliberately carries NO pointer (bookingId, lookupToken, bookingNumber) to the private
+    // bookings record — this collection is publicly listable (the calendar needs it), and
+    // Firestore rules cannot redact individual fields from a list response. Any pointer field
+    // here would let anyone who lists this collection harvest it and read full PII via
+    // bookings' public get-by-id, and would also let them forge the self-cancel transition on
+    // someone else's booking (see bookings/{bookingId} below) since that rule only checks the
+    // transition shape, not identity — the actual authorization boundary is "you can't
+    // discover the ID in the first place." occupiedSince is NOT such a pointer — it's a plain
+    // timestamp matching the current occupant's own createdAt, used only so the admin sweep
+    // (Task 20) can verify it's syncing the same occupancy episode rather than stomping a
+    // newer booking that has since legitimately reclaimed this slot.
+    // submitUtr's transition (pending-payment -> pending-verification, the user claiming
+    // they've paid) needs a narrowly-scoped public exception: the payment window must not
+    // have already passed (resource.data.expiresAt > request.time — enforced here, not just
+    // client-side, otherwise a client could submit a UTR after expiry by writing directly),
+    // and the diff is restricted to status only, so this can't be smuggled in alongside any
+    // other field change. Expiring a stale slot (status -> expired) is admin-only — see the
+    // note below on why that's no longer a public write path.
     match /bookingSlots/{slotId} {
       allow get, list: if true;
-      // bookingSlots is keyed by a deterministic venue|date|slot ID (see Task 6), not the
-      // random bookingId, so each doc also needs its own bookingId field as a pointer to
-      // the matching bookings/{bookingId} record.
-      allow create: if isCreateFieldsValid() && request.resource.data.bookingId is string;
+      allow create: if isCreateFieldsValid();
       allow update: if isAdmin()
         || (
           resource.data.status == 'pending-payment'
-          && request.resource.data.status == 'expired'
-          && resource.data.expiresAt < request.time
+          && request.resource.data.status == 'pending-verification'
+          && resource.data.expiresAt > request.time
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
         );
       allow delete: if isAdmin();
     }
 
+    // Private PII record. get-by-known-ID is public (this is the capability boundary — see
+    // bookingLookup below for the only sanctioned way to learn a bookingId without already
+    // being its creator or an admin). list is admin-only: there is no public query path here.
     match /bookings/{bookingId} {
       allow get: if true;
       allow list: if isAdmin();
       allow create: if isCreateFieldsValid()
+        && request.resource.data.bookingNumber is string
+        && request.resource.data.lookupToken is string
         && !('cancelledBy' in request.resource.data)
         && !('approvedBy' in request.resource.data)
         && !('paymentVerifiedBy' in request.resource.data)
@@ -228,16 +270,36 @@ service cloud.firestore {
         )
         || (
           resource.data.status == 'pending-payment'
-          && request.resource.data.status == 'expired'
-          && resource.data.expiresAt < request.time
+          && request.resource.data.status == 'pending-verification'
+          && resource.data.expiresAt > request.time
+          && request.resource.data.utr is string
+          && request.resource.data.utr.size() >= 6
           && request.resource.data.diff(resource.data).affectedKeys()
-               .hasOnly(['status', 'updatedAt'])
+               .hasOnly(['status', 'utr', 'updatedAt'])
         );
       allow delete: if isAdmin();
     }
 
+    // The ONLY public channel from "I hold this lookupToken" to "here is the bookingId."
+    // Document ID is the token itself, so resolving it is a get() (by a value you must
+    // already know), never a list() — this is what keeps bookingId non-enumerable even
+    // though bookings.get() is public. list is admin-only (no legitimate public need for it).
+    match /bookingLookup/{lookupToken} {
+      allow get: if true;
+      allow list: if isAdmin();
+      allow create: if request.resource.data.keys().hasOnly(['bookingId'])
+        && request.resource.data.bookingId is string
+        && exists(/databases/$(database)/documents/bookings/$(request.resource.data.bookingId));
+      allow update, delete: if isAdmin();
+    }
+
+    // performedBy can't be forged as an arbitrary admin identity: unauthenticated writers may
+    // only attribute an event to 'user' or 'system' (matching what the app's own code does for
+    // self-service actions), and an admin-attributed event must match the actual signed-in
+    // admin's email — otherwise the audit trail could be forged by anyone.
     match /bookingEvents/{eventId} {
-      allow create: if true;
+      allow create: if request.resource.data.performedBy in ['user', 'system']
+        || (isAdmin() && request.resource.data.performedBy == request.auth.token.email);
       allow get, list: if isAdmin();
       allow update, delete: if false;
     }
@@ -297,6 +359,16 @@ Using the Firebase Console's Rules Playground (or `firebase emulators:start` if 
 6. Unauthenticated `update` on `bookings/{id}` changing `status` to `"confirmed"` → **denied**.
 7. Unauthenticated `list` on `members` → **denied**. Unauthenticated `list` on `membersPublic` → **allowed**.
 8. Authenticated (any signed-in user) `update` on `bookings/{id}` to any status → **allowed** (there is only one admin role in this system; anyone who can sign in is an admin, since accounts are hand-created in the console).
+9. Unauthenticated `list` on `bookingSlots` → **allowed**, and confirm the returned documents contain only `venue/date/slot/status/expiresAt` — no `bookingId`, `lookupToken`, or `bookingNumber` field should ever appear there, since that's the whole point of the `bookingLookup` split.
+10. Unauthenticated `get` on `bookingLookup/{someToken}` → **allowed** if that exact document exists. Unauthenticated `list` on `bookingLookup` → **denied**.
+11. Unauthenticated `create` on `bookingLookup/{token}` pointing at a `bookingId` that does **not** exist in `bookings` → **denied** (the `exists()` check).
+12. Unauthenticated `create` on `bookingEvents` with `performedBy: "some-admin@example.com"` (not actually signed in) → **denied**. The same create with `performedBy: "user"` → **allowed**.
+13. Unauthenticated `update` on `bookingSlots/{id}` or `bookings/{id}` attempting to set `status: "expired"` → **denied** (this is now admin-only, see Task 12/20's design note — there is no public expiry-write path left).
+14. Unauthenticated `create` on `bookings` with `expiresAt` set to e.g. 2 hours in the future → **denied** (the ~20-minute bound in `isCreateFieldsValid`).
+15. Unauthenticated `update` on a `bookings/{id}` currently `pending-payment` (with `expiresAt` still in the future), changing only `status → pending-verification` + `utr: "ABCD123456"` + `updatedAt` → **allowed** (the mirrored `bookingSlots` update, same transition, same diff restricted to `status` → **allowed**).
+16. Same as 15 but the booking's `expiresAt` has already passed → **denied**.
+17. Same transition as 15 but also sneaking in a change to `amount` (or any other field outside `['status', 'utr', 'updatedAt']`) → **denied** (the `diff().affectedKeys().hasOnly(...)` guard).
+18. Same transition as 15 but with `utr` shorter than 6 characters, or missing entirely → **denied**.
 
 - [ ] **Step 5: Commit**
 
@@ -320,8 +392,9 @@ git commit -m "Add Firestore security rules for hall booking collections"
   - `type BookingStatus = "pending-approval" | "pending-payment" | "pending-verification" | "confirmed" | "cancelled" | "expired"`
   - `type Venue = "Executives Club Community Hall" | "Shopping Complex Room" | "Multi Purpose Room" | string` (string covers "Other" free text)
   - `type Slot = "Morning" | "Evening"`
-  - `interface BookingSlotDoc { venue: Venue; date: string; slot: Slot; status: BookingStatus; bookingNumber: string; lookupToken: string; expiresAt: Timestamp | null }`
-  - `interface BookingDoc extends BookingSlotDoc { name: string; empId: string; phone: string; email: string; purpose: string; duration: string; utr: string | null; amount: number; isMember: boolean; cancelledBy: "user" | "admin" | null; approvedBy: string | null; approvedAt: Timestamp | null; paymentVerifiedBy: string | null; paymentVerifiedAt: Timestamp | null; rejectedBy: string | null; rejectedAt: Timestamp | null; cancelledAt: Timestamp | null; createdAt: Timestamp; updatedAt: Timestamp }`
+  - `interface BookingSlotDoc { venue: Venue; date: string; slot: Slot; status: BookingStatus; expiresAt: Timestamp | null; occupiedSince: Timestamp }` — public availability layer only, no pointer to the private record (see Task 2's security-review note); `occupiedSince` is a plain timestamp (not a pointer) letting the admin sweep (Task 20) verify it's syncing the same occupancy episode
+  - `interface BookingDoc extends BookingSlotDoc { bookingNumber: string; lookupToken: string; name: string; empId: string; phone: string; email: string; purpose: string; duration: string; utr: string | null; amount: number; isMember: boolean; cancelledBy: "user" | "admin" | null; approvedBy: string | null; approvedAt: Timestamp | null; paymentVerifiedBy: string | null; paymentVerifiedAt: Timestamp | null; rejectedBy: string | null; rejectedAt: Timestamp | null; cancelledAt: Timestamp | null; createdAt: Timestamp; updatedAt: Timestamp }`
+  - `interface BookingLookupDoc { bookingId: string }` — doc ID is the lookupToken itself
   - `VENUES: { name: string; feeMember: number; feeNonMember: number }[]`
   - `SLOTS: Record<Slot, { label: string; time: string }>`
   - `PENDING_PAYMENT_TIMEOUT_MS = 15 * 60 * 1000`
@@ -342,18 +415,24 @@ export type BookingStatus =
 
 export type Slot = "Morning" | "Evening";
 
+// Public availability layer only (see firestore.rules) — deliberately carries no pointer to
+// the private bookings record, since this collection is publicly listable for the calendar.
+// occupiedSince is NOT a pointer to PII — it's a plain timestamp (matching the current
+// occupant's own createdAt, set atomically in the same transaction) used only so the admin
+// sweep (Task 20) can verify it's still syncing the SAME occupancy episode it thinks it is,
+// rather than stomping a newer booking that has since legitimately reclaimed this slot.
 export interface BookingSlotDoc {
-  bookingId: string;
   venue: string;
   date: string;
   slot: Slot;
   status: BookingStatus;
-  bookingNumber: string;
-  lookupToken: string;
   expiresAt: Timestamp | null;
+  occupiedSince: Timestamp;
 }
 
 export interface BookingDoc extends BookingSlotDoc {
+  bookingNumber: string;
+  lookupToken: string;
   name: string;
   empId: string;
   phone: string;
@@ -378,6 +457,12 @@ export interface BookingDoc extends BookingSlotDoc {
 export interface MemberPublicDoc {
   empIdHash: string;
   isMember: boolean;
+}
+
+// Document ID is the lookupToken itself — the only public channel from "I hold this token"
+// to "here is the bookingId" (see firestore.rules for why this must be a get(), not list()).
+export interface BookingLookupDoc {
+  bookingId: string;
 }
 
 export interface BlockedDateDoc {
@@ -547,14 +632,14 @@ git commit -m "Add hall booking types, constants, fee calculation, and determini
 - Produces:
   - `generateBookingNumber(): string` — e.g. `"EC-4F82A1"`
   - `generateLookupToken(): string` — 32 hex chars (128 bits)
-  - `sha256Hex(input: string): Promise<string>`
+  - `hashEmployeeId(input: string): Promise<string>`
 
 - [ ] **Step 1: Write the failing tests**
 
 `src/lib/hall/crypto.test.ts`:
 ```typescript
 import { describe, it, expect } from "vitest";
-import { generateBookingNumber, generateLookupToken, sha256Hex } from "./crypto";
+import { generateBookingNumber, generateLookupToken, hashEmployeeId } from "./crypto";
 
 describe("generateBookingNumber", () => {
   it("matches the EC-XXXXXX format", () => {
@@ -578,27 +663,28 @@ describe("generateLookupToken", () => {
   });
 });
 
-describe("sha256Hex", () => {
-  it("hashes a known input to the known SHA-256 hex digest", async () => {
-    // SHA-256("EMP12345") precomputed
-    const hash = await sha256Hex("EMP12345");
-    expect(hash).toBe("a5f2b6a3f7f2e6c8f0f1c4b2c9a6d3e1f4a7c0b3e6d9f2a5c8b1e4d7a0c3f6b9".length === 64 ? hash : hash);
+describe("hashEmployeeId", () => {
+  it("produces a 64-character hex digest (256 bits)", async () => {
+    const hash = await hashEmployeeId("EMP12345");
     expect(hash).toMatch(/^[0-9a-f]{64}$/);
   });
   it("is deterministic for the same input", async () => {
-    const a = await sha256Hex("EMP12345");
-    const b = await sha256Hex("EMP12345");
+    const a = await hashEmployeeId("EMP12345");
+    const b = await hashEmployeeId("EMP12345");
     expect(a).toBe(b);
   });
   it("normalizes case/whitespace before hashing so lookups are consistent", async () => {
-    const a = await sha256Hex("emp12345");
-    const b = await sha256Hex("EMP12345");
+    const a = await hashEmployeeId("emp12345");
+    const b = await hashEmployeeId("EMP12345");
     expect(a).toBe(b);
+  });
+  it("produces different hashes for different employee IDs", async () => {
+    const a = await hashEmployeeId("EMP12345");
+    const b = await hashEmployeeId("EMP99999");
+    expect(a).not.toBe(b);
   });
 });
 ```
-
-(Note on step 1's first assertion: it's written defensively since the exact digest isn't hand-verified here — the meaningful assertions are the format check and the determinism/normalization checks below it.)
 
 - [ ] **Step 2: Run tests to verify they fail**
 
@@ -606,6 +692,14 @@ Run: `bun run test src/lib/hall/crypto.test.ts`
 Expected: FAIL with "Cannot find module './crypto'"
 
 - [ ] **Step 3: Write `src/lib/hall/crypto.ts`**
+
+**Why PBKDF2, not a single SHA-256 pass:** Employee IDs are low-entropy/structured (e.g.
+`EMP00001`-`EMP99999`), so a single hash pass would let an attacker precompute the entire
+keyspace almost instantly and reverse every `membersPublic` entry. There's no server to hold
+a secret pepper in this backend-free architecture, so the practical mitigation is a slow,
+iterated KDF to raise the brute-force cost substantially — this does **not** eliminate
+feasibility against a small keyspace by a sufficiently motivated offline attacker who has the
+(public, non-secret) salt below; it's a disclosed limitation, not a claim of full protection.
 
 ```typescript
 function randomHex(byteLength: number): string {
@@ -624,11 +718,29 @@ export function generateLookupToken(): string {
   return randomHex(16);
 }
 
-export async function sha256Hex(input: string): Promise<string> {
-  const normalized = input.trim().toLowerCase();
-  const data = new TextEncoder().encode(normalized);
-  const digest = await crypto.subtle.digest("SHA-256", data);
-  return Array.from(new Uint8Array(digest))
+const EMP_ID_HASH_SALT = "executives-club-hall-booking-empid-v1";
+const EMP_ID_HASH_ITERATIONS = 100_000;
+
+export async function hashEmployeeId(empId: string): Promise<string> {
+  const normalized = empId.trim().toLowerCase();
+  const keyMaterial = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(normalized),
+    "PBKDF2",
+    false,
+    ["deriveBits"],
+  );
+  const derived = await crypto.subtle.deriveBits(
+    {
+      name: "PBKDF2",
+      salt: new TextEncoder().encode(EMP_ID_HASH_SALT),
+      iterations: EMP_ID_HASH_ITERATIONS,
+      hash: "SHA-256",
+    },
+    keyMaterial,
+    256,
+  );
+  return Array.from(new Uint8Array(derived))
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
 }
@@ -637,7 +749,7 @@ export async function sha256Hex(input: string): Promise<string> {
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `bun run test src/lib/hall/crypto.test.ts`
-Expected: PASS (6 tests)
+Expected: PASS (8 tests)
 
 - [ ] **Step 5: Commit**
 
@@ -777,7 +889,9 @@ git commit -m "Add conflict-rule and payment-expiry pure logic"
   - `logBookingEvent(tx: Transaction, bookingId: string, action: string, oldStatus: BookingStatus | null, newStatus: BookingStatus, performedBy: string): void`
   - `createBooking(input: { name, empId, phone, email, venue, date, slot, purpose, duration, isMember }): Promise<{ bookingId: string; bookingNumber: string; lookupToken: string; status: "pending-payment" | "pending-approval" }>`
 
-**Why `bookingSlots` uses a deterministic document ID, not the random `bookingId`:** Firestore transactions only get automatic conflict detection for documents read via `tx.get()` on a *known reference* inside the transaction — they cannot run `where()` queries transactionally at all. If the conflict check ran as a `getDocs()` query before the transaction (as an earlier draft of this plan did) and then wrote to a brand-new random-ID document inside the transaction, two concurrent requests for the same venue+date+slot could both pass the pre-check and both get written — a real double-booking, and exactly the failure mode the spec's "transaction is the sole authority on double-booking prevention" claim was meant to rule out. Keying `bookingSlots` by `slotDocId(venue, date, slot)` fixes this: there are only ever two possible slots per venue per day, so both "is this exact slot taken" and "does the other slot that day have anything blocking" become reads of two *known, fixed* document references — genuinely atomic via `tx.get()`. The `bookings/{bookingId}` document keeps its own random ID as before; `bookingSlots` stores a `bookingId` field pointing at whichever booking currently holds that slot. `blockedDates` stays a pre-transaction `getDocs()` check — blocking a date is an infrequent admin action, not something two customers race on, so it doesn't need this treatment.
+**Why `bookingSlots` uses a deterministic document ID, not the random `bookingId`:** Firestore transactions only get automatic conflict detection for documents read via `tx.get()` on a *known reference* inside the transaction — they cannot run `where()` queries transactionally at all. If the conflict check ran as a `getDocs()` query before the transaction (as an earlier draft of this plan did) and then wrote to a brand-new random-ID document inside the transaction, two concurrent requests for the same venue+date+slot could both pass the pre-check and both get written — a real double-booking, and exactly the failure mode the spec's "transaction is the sole authority on double-booking prevention" claim was meant to rule out. Keying `bookingSlots` by `slotDocId(venue, date, slot)` fixes this: there are only ever two possible slots per venue per day, so both "is this exact slot taken" and "does the other slot that day have anything blocking" become reads of two *known, fixed* document references — genuinely atomic via `tx.get()`. `blockedDates` stays a pre-transaction `getDocs()` check — blocking a date is an infrequent admin action, not something two customers race on, so it doesn't need this treatment.
+
+**Why `bookingSlots` does NOT store a `bookingId` pointer (security-review correction):** an earlier draft had `bookingSlots` carry a `bookingId` field. Since that collection is publicly `list`-able (the calendar needs it) and Firestore rules cannot redact individual fields from a list response, anyone listing it could harvest every `bookingId` and read full PII via `bookings`' public get-by-id — and use a harvested `bookingId` to self-cancel *other people's* bookings, since the self-cancel rule only checks the transition shape, not identity. Fixed by keeping `bookingSlots` down to venue/date/slot/status/expiresAt only, and adding a `bookingLookup/{lookupToken}` document (Task 3's new `BookingLookupDoc`) as the sole public channel from "I hold this token" to "here is the bookingId" — a `get()` by a value the caller must already know, never a `list()`. `createBooking` now writes three documents in the same transaction: `bookingSlots/{slotDocId}`, `bookings/{bookingId}`, and `bookingLookup/{lookupToken}`.
 
 This task has no isolated unit test for the transaction itself — it's a Firestore transaction, and per the spec's Testing section, mocking Firestore transactions isn't worth the effort. It's verified via the manual QA checklist in Task 22 (booking happy path, real-slot-conflict rejection, same-day-caution path, and — new — a genuine concurrency check: fire two `createBooking` calls for the same venue+date+slot at the same time and confirm exactly one succeeds). This matches the plan's approach for every subsequent `transactions.ts` function.
 
@@ -906,18 +1020,24 @@ export async function createBooking(input: CreateBookingInput): Promise<CreateBo
         ? Timestamp.fromMillis(now + PENDING_PAYMENT_TIMEOUT_MS)
         : null;
 
+    // occupiedSince and createdAt intentionally use the same serverTimestamp() sentinel and
+    // commit atomically in this same transaction, so they resolve to the identical server-set
+    // value — that's what lets the admin sweep (Task 20) later verify "is this bookingSlots
+    // doc still the same occupancy episode as this specific (possibly stale) booking?" without
+    // bookingSlots needing to store any actual pointer to the booking.
+    const createdAt = serverTimestamp();
     const slotDoc = {
-      bookingId,
       venue: input.venue,
       date: input.date,
       slot: input.slot,
       status: resolvedStatus,
-      bookingNumber,
-      lookupToken,
       expiresAt,
+      occupiedSince: createdAt,
     };
     const bookingDoc = {
       ...slotDoc,
+      bookingNumber,
+      lookupToken,
       name: input.name,
       empId: input.empId,
       phone: input.phone,
@@ -935,11 +1055,12 @@ export async function createBooking(input: CreateBookingInput): Promise<CreateBo
       rejectedBy: null,
       rejectedAt: null,
       cancelledAt: null,
-      createdAt: serverTimestamp(),
+      createdAt,
       updatedAt: serverTimestamp(),
     };
     tx.set(slotRef, slotDoc);
     tx.set(bookingRef, bookingDoc);
+    tx.set(doc(db, "bookingLookup", lookupToken), { bookingId });
     logBookingEvent(tx, bookingId, "CREATED", null, resolvedStatus, "user");
     return resolvedStatus;
   });
@@ -1193,6 +1314,8 @@ git commit -m "Add verifyPayment and rejectPayment admin transactions"
 
 - [ ] **Step 1: Add all three functions to `src/lib/hall/transactions.ts`**
 
+**Design note (security-review correction):** `cancelBookingSelf` does NOT also update the matching `bookingSlots` doc, unlike every other transition in this file. It's called anonymously (from the public status page), and `bookingSlots`' deterministic ID (`venue|date|slot`) is fully public/guessable — there is no secret involved, so a rule permitting "confirmed/pending-payment → cancelled" there for anyone would let a stranger free (or otherwise tamper with) a slot they have no connection to, just by knowing its public venue/date/slot. `bookingSlots` sync for this case is instead handled by the admin-side sweep (Task 20's `AllBookingsTab`, extended to also cover self-cancelled bookings, not just expired ones — the same pattern already used for stale-payment expiry). This is safe, not just convenient: until the sweep runs, `bookingSlots` still shows the slot as taken, so it can't be raced by a new booking in the interim — a self-cancelled slot is briefly unavailable for rebooking rather than vulnerable to being stomped by an unrelated write.
+
 ```typescript
 export async function cancelBookingSelf(bookingId: string): Promise<void> {
   const bookingRef = doc(db, "bookings", bookingId);
@@ -1205,7 +1328,6 @@ export async function cancelBookingSelf(bookingId: string): Promise<void> {
     if (status !== "confirmed" && status !== "pending-payment") {
       throw new Error("INVALID_STATE");
     }
-    const slotRef = doc(db, "bookingSlots", slotDocId(data.venue, data.date, data.slot));
 
     tx.update(bookingRef, {
       status: "cancelled",
@@ -1213,7 +1335,6 @@ export async function cancelBookingSelf(bookingId: string): Promise<void> {
       cancelledAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     });
-    tx.update(slotRef, { status: "cancelled" });
     logBookingEvent(tx, bookingId, "CANCELLED", status, "cancelled", "user");
   });
 }
@@ -1261,7 +1382,7 @@ export async function expireStaleBooking(bookingId: string): Promise<void> {
 
 - [ ] **Step 2: Manual verification checklist (Task 22)**
 
-Self-cancel a `confirmed` booking → `cancelled`, `cancelledBy: "user"`. Attempt self-cancel on a `pending-approval` booking → throws `INVALID_STATE`. Admin force-cancels a `pending-verification` booking → `cancelled`, `cancelledBy: "admin"`. Call `expireStaleBooking` on a booking whose `expiresAt` has passed → `expired`; calling it again is a no-op (idempotent, matches the rules' single-transition guard).
+Self-cancel a `confirmed` booking (as an unauthenticated user, matching real usage from the status page) → `bookings/{id}` flips to `cancelled`, `cancelledBy: "user"`; confirm `bookingSlots` for that slot is *unchanged* (still shows the pre-cancel status) until the admin sweep runs — this is expected, not a bug. Attempt self-cancel on a `pending-approval` booking → throws `INVALID_STATE`. Admin force-cancels a `pending-verification` booking → `cancelled`, `cancelledBy: "admin"`, and confirm this one *does* update `bookingSlots` immediately (admin writes aren't deferred to a sweep). Call `expireStaleBooking` on a booking whose `expiresAt` has passed → `expired`; calling it again is a no-op (idempotent, matches the rules' single-transition guard).
 
 - [ ] **Step 3: Commit**
 
@@ -1278,7 +1399,7 @@ git commit -m "Add self-cancel, admin-cancel, and stale-expiry transactions"
 - Create: `src/lib/hall/members.ts`
 
 **Interfaces:**
-- Consumes: `sha256Hex` (Task 4), `db`, `requireAdminEmail`-style guard pattern (auth check happens via Firestore rules, not client-side, for the write path).
+- Consumes: `hashEmployeeId` (Task 4), `db`, `requireAdminEmail`-style guard pattern (auth check happens via Firestore rules, not client-side, for the write path).
 - Produces: `verifyMembership(empId: string): Promise<boolean>`, `uploadMembers(rows: { empId: string; name: string; phone: string }[]): Promise<void>`.
 
 - [ ] **Step 1: Write `src/lib/hall/members.ts`**
@@ -1286,10 +1407,10 @@ git commit -m "Add self-cancel, admin-cancel, and stale-expiry transactions"
 ```typescript
 import { collection, doc, getDocs, query, where, writeBatch } from "firebase/firestore";
 import { db } from "./firebase";
-import { sha256Hex } from "./crypto";
+import { hashEmployeeId } from "./crypto";
 
 export async function verifyMembership(empId: string): Promise<boolean> {
-  const hash = await sha256Hex(empId);
+  const hash = await hashEmployeeId(empId);
   const q = query(collection(db, "membersPublic"), where("empIdHash", "==", hash));
   const snap = await getDocs(q);
   return snap.docs.some((d) => d.data().isMember === true);
@@ -1304,7 +1425,7 @@ export interface MemberRow {
 export async function uploadMembers(rows: MemberRow[]): Promise<void> {
   const batch = writeBatch(db);
   for (const row of rows) {
-    const hash = await sha256Hex(row.empId);
+    const hash = await hashEmployeeId(row.empId);
     const memberRef = doc(collection(db, "members"));
     const publicRef = doc(db, "membersPublic", hash);
     batch.set(memberRef, { empId: row.empId, name: row.name, phone: row.phone });
@@ -1319,10 +1440,10 @@ Note: using `hash` as the `membersPublic` document ID (instead of an auto ID) ma
 ```typescript
 import { doc, getDoc, writeBatch, collection } from "firebase/firestore";
 import { db } from "./firebase";
-import { sha256Hex } from "./crypto";
+import { hashEmployeeId } from "./crypto";
 
 export async function verifyMembership(empId: string): Promise<boolean> {
-  const hash = await sha256Hex(empId);
+  const hash = await hashEmployeeId(empId);
   const snap = await getDoc(doc(db, "membersPublic", hash));
   return snap.exists() && snap.data().isMember === true;
 }
@@ -1336,7 +1457,7 @@ export interface MemberRow {
 export async function uploadMembers(rows: MemberRow[]): Promise<void> {
   const batch = writeBatch(db);
   for (const row of rows) {
-    const hash = await sha256Hex(row.empId);
+    const hash = await hashEmployeeId(row.empId);
     const memberRef = doc(collection(db, "members"));
     const publicRef = doc(db, "membersPublic", hash);
     batch.set(memberRef, { empId: row.empId, name: row.name, phone: row.phone });
@@ -1367,25 +1488,25 @@ git commit -m "Add membership verification and admin member upload"
 - Create: `src/lib/hall/calendar.ts`
 
 **Interfaces:**
-- Consumes: `db`, `isBlockingSlot`/`isExpiredPendingPayment` (Task 5), `expireStaleBooking` (Task 10).
+- Consumes: `db`, `isBlockingSlot` (Task 5).
 - Produces:
-  - `type DayStatus = "available" | "confirmed" | "pending" | "held"`
+  - `type DayStatus = "available" | "confirmed" | "pending" | "held" | "blocked"`
   - `deriveDayStatus(slotDocs: { status: BookingStatus; expiresAt: Timestamp | null; slot: Slot }[], now: number): { Morning: DayStatus; Evening: DayStatus }`
   - `subscribeToCalendar(venue: string, year: number, month: number, onChange: (byDate: Record<string, { Morning: DayStatus; Evening: DayStatus }>) => void): () => void` (returns an unsubscribe function)
+
+**Design note (security-review correction):** an earlier draft had this module also *write* an expiry flip (`expireStaleBooking`) whenever it noticed a stale `pending-payment` doc while rendering. That relied on `bookingSlots` carrying a `bookingId` field, which was removed for the reasons in Task 6's note (it would have let anyone listing this public collection harvest bookingIds and read PII). Without that field, the calendar has no legitimate way to resolve which `bookings` doc to expire, and shouldn't — flipping stale bookings to `expired` is now an **admin-only sweep** done from the authenticated admin panel (Task 20's `AllBookingsTab`, which already holds real `bookingId`s via its own privileged `bookings.list()` access). This module is purely a read-only display: it already derives "held" vs "available" from `expiresAt` freshness via `isBlockingSlot` regardless of what the stored `status` string says, so a stale-but-not-yet-flipped `pending-payment` doc still renders correctly as available — no write needed for correct display, only for admin-side bookkeeping.
 
 - [ ] **Step 1: Write `src/lib/hall/calendar.ts`**
 
 ```typescript
 import { collection, onSnapshot, query, where } from "firebase/firestore";
 import { db } from "./firebase";
-import { isBlockingSlot, isExpiredPendingPayment } from "./conflict";
-import { expireStaleBooking } from "./transactions";
+import { isBlockingSlot } from "./conflict";
 import type { BookingStatus, Slot } from "./types";
 
 export type DayStatus = "available" | "confirmed" | "pending" | "held" | "blocked";
 
 interface SlotLike {
-  bookingId: string;
   status: BookingStatus;
   expiresAt: { toMillis(): number } | null;
   slot: Slot;
@@ -1454,18 +1575,11 @@ export function subscribeToCalendar(
   }
 
   const unsubSlots = onSnapshot(slotsQuery, (snap) => {
-    const now = Date.now();
     const byDate: Record<string, SlotLike[]> = {};
     for (const d of snap.docs) {
       const data = d.data() as SlotLike & { date: string };
       if (!byDate[data.date]) byDate[data.date] = [];
       byDate[data.date].push(data);
-
-      if (isExpiredPendingPayment(data.status, data.expiresAt, now)) {
-        // bookingSlots' doc ID is now the deterministic venue|date|slot key (Task 6), not
-        // the bookingId — the actual bookings doc to expire is pointed to by data.bookingId.
-        void expireStaleBooking(data.bookingId);
-      }
     }
     latestSlots = byDate;
     emit();
@@ -1490,13 +1604,13 @@ export function subscribeToCalendar(
 
 - [ ] **Step 2: Manual verification checklist (Task 22)**
 
-Open the calendar in two browser tabs on the same venue/month. Create a booking in tab A → tab B's calendar updates without a reload. Manually expire a `pending-payment` doc's `expiresAt` in the console → within one snapshot tick, the day stops showing "held" and the doc's status flips to `expired` in Firestore. Add a `blockedDates` doc for that venue/a date in this month → the calendar shows it as blocked without a reload.
+Open the calendar in two browser tabs on the same venue/month. Create a booking in tab A → tab B's calendar updates without a reload. Manually set a `pending-payment` doc's `expiresAt` to the past in the console (leaving its stored `status` as `pending-payment`) → within one snapshot tick, the day stops showing "held" as available, purely from the timestamp comparison — no write happens, and the stored `status` string is still `pending-payment` until an admin's sweep (Task 20) flips it. Add a `blockedDates` doc for that venue/a date in this month → the calendar shows it as blocked without a reload.
 
 - [ ] **Step 3: Commit**
 
 ```bash
 git add src/lib/hall/calendar.ts
-git commit -m "Add live calendar subscription with day-status derivation and client-side expiry"
+git commit -m "Add live calendar subscription with day-status derivation"
 ```
 
 ---
@@ -2197,7 +2311,7 @@ git commit -m "Wire booking wizard steps 3-4 to createBooking and submitUtr tran
 - Create: `src/routes/hall.status.tsx`
 
 **Interfaces:**
-- Consumes: `db`, `cancelBookingSelf` (Task 10), `BookingDoc` (Task 3).
+- Consumes: `db`, `cancelBookingSelf` (Task 10), `BookingDoc`/`BookingLookupDoc` (Task 3).
 - Produces: a new route rendering one booking's status by `lookupToken`, with a self-cancel button when eligible.
 
 - [ ] **Step 1: Write `src/routes/hall.status.tsx`**
@@ -2205,11 +2319,11 @@ git commit -m "Wire booking wizard steps 3-4 to createBooking and submitUtr tran
 ```tsx
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { collection, doc, getDoc, getDocs, query, where } from "firebase/firestore";
+import { doc, getDoc } from "firebase/firestore";
 import { db } from "@/lib/hall/firebase";
 import { cancelBookingSelf } from "@/lib/hall/transactions";
 import { SiteHeader, SiteFooter } from "@/components/site-chrome";
-import type { BookingDoc } from "@/lib/hall/types";
+import type { BookingDoc, BookingLookupDoc } from "@/lib/hall/types";
 
 export const Route = createFileRoute("/hall/status")({
   validateSearch: (search: Record<string, unknown>) => ({
@@ -2233,18 +2347,18 @@ function StatusPage() {
         setLoading(false);
         return;
       }
-      const slotQuery = query(collection(db, "bookingSlots"), where("lookupToken", "==", token));
-      const slotSnap = await getDocs(slotQuery);
-      if (slotSnap.empty) {
+      // bookingLookup's doc ID is the token itself — a get() by a value the caller must
+      // already know, never a list(), which is what keeps bookingId non-enumerable (see
+      // Task 6's design note and firestore.rules).
+      const lookupSnap = await getDoc(doc(db, "bookingLookup", token));
+      if (!lookupSnap.exists()) {
         if (!cancelled) {
           setError("No booking found for this link.");
           setLoading(false);
         }
         return;
       }
-      // bookingSlots' doc ID is the deterministic venue|date|slot key (Task 6), not the
-      // bookingId — the matched slot doc's bookingId field points to the real booking.
-      const bookingId = slotSnap.docs[0].data().bookingId as string;
+      const bookingId = (lookupSnap.data() as BookingLookupDoc).bookingId;
       const bookingSnap = await getDoc(doc(db, "bookings", bookingId));
       if (!cancelled) {
         if (bookingSnap.exists()) {
@@ -2555,8 +2669,10 @@ git commit -m "Add Pending Approval and Pending Verification admin tabs"
 - Modify: `src/routes/admin.tsx`
 
 **Interfaces:**
-- Consumes: `cancelBookingAdmin` (Task 10), `BlockedDateDoc` (Task 3).
-- Produces: working `AllBookingsTab` and `BlockedDatesTab`.
+- Consumes: `cancelBookingAdmin`, `expireStaleBooking` (Task 10), `isExpiredPendingPayment` (Task 5), `slotDocId` (Task 3), `BlockedDateDoc` (Task 3).
+- Produces: working `AllBookingsTab` (including two admin-side sweeps — stale-payment expiry and self-cancelled `bookingSlots` sync, see Task 12/10's design notes for why both moved here instead of being written by their originating, unauthenticated caller) and `BlockedDatesTab`.
+
+**Why the two sweeps aren't symmetric:** the expiry sweep is safe to blindly re-run — `expireStaleBooking`'s own transaction re-checks the booking's *current* status fresh each time, and once a booking is `expired` it can never match `isExpiredPendingPayment` again, so the outer loop naturally stops retrying it. `cancelled`, unlike `expired`, is a status every reload will match forever for every historically cancelled booking — so a naive blind write here *would* eventually stomp a different, newer booking that has since legitimately reclaimed the same `venue|date|slot` key (which can only happen after the first successful sync frees it — the very sweep this guards). The fix is `occupiedSince` (Task 3/6): only overwrite `bookingSlots` if its current `occupiedSince` still matches *this specific* stale booking's own `occupiedSince` — if it doesn't match, a different booking now legitimately owns that slot key, and the sweep must leave it alone.
 
 - [ ] **Step 1: Replace `AllBookingsTab` and `BlockedDatesTab` in `src/routes/admin.tsx`**
 
@@ -2569,7 +2685,38 @@ function AllBookingsTab() {
   const reload = async () => {
     setLoading(true);
     const snap = await getDocs(collection(db, "bookings"));
-    setBookings(snap.docs.map((d) => ({ ...(d.data() as BookingDoc), bookingId: d.id })));
+    const loaded = snap.docs.map((d) => ({ ...(d.data() as BookingDoc), bookingId: d.id }));
+
+    // Two admin-side sweeps, both syncing bookingSlots from state the admin panel already has
+    // authenticated access to.
+    const now = Date.now();
+    for (const b of loaded) {
+      if (isExpiredPendingPayment(b.status, b.expiresAt, now)) {
+        // Stale-payment expiry: the calendar deliberately no longer triggers this write itself
+        // (see Task 12), since doing so would have required bookingSlots to carry a bookingId
+        // pointer, which is a PII-leak risk once that collection is publicly listable. Safe to
+        // blindly retry — expireStaleBooking re-checks the booking's live status, and once
+        // expired it can never match this branch's condition again.
+        void expireStaleBooking(b.bookingId);
+        b.status = "expired"; // optimistic local update so the UI doesn't wait for the write
+      } else if (b.status === "cancelled") {
+        // Self-cancel sync: cancelBookingSelf (Task 10) can't write bookingSlots itself, since
+        // it's called anonymously and bookingSlots' deterministic ID is public/guessable — a
+        // rule permitting that write for anyone would let a stranger free or tamper with a
+        // slot they have no connection to. The admin write below is authorized via isAdmin(),
+        // no new rule needed. Unlike expiry, "cancelled" matches forever on every reload, so
+        // this must verify occupiedSince still matches THIS booking before writing, or a
+        // stale sweep could stomp a different, newer booking that has since claimed the slot.
+        const slotRef = doc(db, "bookingSlots", slotDocId(b.venue, b.date, b.slot));
+        void getDoc(slotRef).then((slotSnap) => {
+          if (slotSnap.exists() && slotSnap.data().occupiedSince?.isEqual(b.occupiedSince)) {
+            void updateDoc(slotRef, { status: "cancelled" }).catch(() => {});
+          }
+        });
+      }
+    }
+
+    setBookings(loaded);
     setLoading(false);
   };
 
@@ -2665,15 +2812,17 @@ function BlockedDatesTab() {
 - [ ] **Step 2: Add the required imports at the top of `src/routes/admin.tsx`**
 
 ```typescript
-import { addDoc, deleteDoc, serverTimestamp } from "firebase/firestore";
-import { cancelBookingAdmin } from "@/lib/hall/transactions";
+import { addDoc, deleteDoc, doc, getDoc, serverTimestamp, updateDoc } from "firebase/firestore";
+import { cancelBookingAdmin, expireStaleBooking } from "@/lib/hall/transactions";
+import { isExpiredPendingPayment } from "@/lib/hall/conflict";
+import { slotDocId } from "@/lib/hall/slotKey";
 import { VENUES } from "@/lib/hall/constants";
 import type { BlockedDateDoc } from "@/lib/hall/types";
 ```
 
 - [ ] **Step 3: Manual verification (Task 22)**
 
-Confirm the All Bookings filter works and Force Cancel updates status. Block a date for a specific venue, confirm it appears in this tab's list, shows as blocked on that venue's calendar (Task 12/14), and attempting to create a booking for that venue/date in the booking wizard (Task 16) is rejected with "This date is blocked for this venue" (`createBooking`'s `DATE_BLOCKED` check, Task 6). Block a date with venue `"all"`, confirm it blocks every venue's calendar and booking attempts.
+Confirm the All Bookings filter works and Force Cancel updates status. Block a date for a specific venue, confirm it appears in this tab's list, shows as blocked on that venue's calendar (Task 12/14), and attempting to create a booking for that venue/date in the booking wizard (Task 16) is rejected with "This date is blocked for this venue" (`createBooking`'s `DATE_BLOCKED` check, Task 6). Block a date with venue `"all"`, confirm it blocks every venue's calendar and booking attempts. Manually set a `pending-payment` booking's `expiresAt` to the past in the console, load this tab as admin → confirm it shows as `expired` and the Firestore doc's stored `status` is flipped (the sweep in `reload()`), without needing to visit the calendar first.
 
 - [ ] **Step 4: Commit**
 
@@ -2787,7 +2936,7 @@ Run: `bunx firebase-tools deploy --only firestore:rules` (requires `firebase log
 
 - [ ] **Step 4: Run the Task 2 security-rules manual checklist**
 
-Execute all 8 scenarios listed in Task 2, Step 4, against the real deployed rules using the Rules Playground in the Firebase Console. Fix and redeploy if any scenario doesn't match the expected outcome.
+Execute all 18 scenarios listed in Task 2, Step 4, against the real deployed rules using the Rules Playground in the Firebase Console. Fix and redeploy if any scenario doesn't match the expected outcome.
 
 - [ ] **Step 5: Create the admin account**
 
@@ -2837,5 +2986,17 @@ git commit -m "Document hall booking deployment steps and finalize Firebase proj
 
 **Gap found and fixed during self-review:** an earlier draft of this plan had `blockedDates` displayed in the admin tab (Task 20) but never actually consulted by `createBooking` (Task 6) or the calendar (Task 12/14) — meaning blocking a date would have had no real effect. Fixed by adding a `blockedDates` check to `createBooking`'s conflict evaluation (throws `DATE_BLOCKED`), propagating that error to the booking wizard's UI (Task 16), and extending `subscribeToCalendar`/`deriveDayStatus`'s `DayStatus` type with a `"blocked"` state fed by a second `onSnapshot` listener on `blockedDates` (Task 12), rendered in the calendar grid (Task 14).
 
-**Correction made before execution began (critical-review pass, not a self-review-loop finding):** the original Task 6 ran the venue+date+slot conflict check as `getDocs()` queries *before* opening the transaction, then wrote a brand-new random-ID `bookingSlots` document *inside* the transaction. Firestore transactions only get automatic conflict detection for documents read via `tx.get()` on a known reference inside the transaction — they can't run `where()` queries transactionally at all, and a pre-transaction query result isn't retried on contention. Two concurrent `createBooking` calls for the same venue+date+slot could both pass the pre-check and both get written, which is exactly the double-booking the spec's "transaction is the sole authority" claim was meant to prevent. Fixed by giving `bookingSlots` a deterministic document ID (`slotDocId(venue, date, slot)`, Task 3's new `slotKey.ts`) instead of sharing the random `bookingId` — since there are only two possible slots per venue per day, both "is this slot taken" and "does the other slot that day block" become reads of two known, fixed document references, which *are* genuinely atomic via `tx.get()` inside `runTransaction`. `bookingSlots` now carries an explicit `bookingId` field pointing at the current occupant's `bookings/{bookingId}` record; every place that previously assumed "slot doc ID == bookingId" (Tasks 7–10's slot-mirror updates, Task 12's expiry trigger, Task 17's status lookup) was updated to resolve the slot doc by its deterministic key or read `bookingId` from it instead. `blockedDates` was deliberately left as a pre-transaction check — it's an infrequent admin action, not a customer-vs-customer race, so it doesn't need this treatment.
+**Correction made before execution began (critical-review pass, not a self-review-loop finding):** the original Task 6 ran the venue+date+slot conflict check as `getDocs()` queries *before* opening the transaction, then wrote a brand-new random-ID `bookingSlots` document *inside* the transaction. Firestore transactions only get automatic conflict detection for documents read via `tx.get()` on a known reference inside the transaction — they can't run `where()` queries transactionally at all, and a pre-transaction query result isn't retried on contention. Two concurrent `createBooking` calls for the same venue+date+slot could both pass the pre-check and both get written, which is exactly the double-booking the spec's "transaction is the sole authority" claim was meant to prevent. Fixed by giving `bookingSlots` a deterministic document ID (`slotDocId(venue, date, slot)`, Task 3's new `slotKey.ts`) instead of sharing the random `bookingId` — since there are only two possible slots per venue per day, both "is this slot taken" and "does the other slot that day block" become reads of two known, fixed document references, which *are* genuinely atomic via `tx.get()` inside `runTransaction`. `blockedDates` was deliberately left as a pre-transaction check — it's an infrequent admin action, not a customer-vs-customer race, so it doesn't need this treatment.
+
+**Corrections made mid-execution (automated background security review of Tasks 2/4 commits, applied before Task 6 was written in code):** two further real vulnerabilities were caught after Tasks 1–5 were already committed to the implementation branch.
+
+1. The version of Task 6 quoted above originally had `bookingSlots` carry a `bookingId` field pointing at the current occupant. Since `bookingSlots` is publicly `list`-able (the calendar needs it) and Firestore rules cannot redact individual fields from a list response, anyone listing that collection could harvest every `bookingId` and read full PII (name/phone/email/purpose/UTR) via `bookings`' public get-by-id — completely defeating the `lookupToken`-as-capability model the spec was built around. Worse, it meant anyone who harvested a `bookingId` this way could self-cancel *other people's* confirmed bookings, since the self-cancel rule only checks the transition shape, not identity. Fixed by stripping `bookingSlots` down to `venue/date/slot/status/expiresAt` only (no pointer of any kind — see Task 3/6/12's updated code) and adding a `bookingLookup/{lookupToken}` collection (new `BookingLookupDoc`, Task 3) as the sole public channel from token to `bookingId`: a `get()` by a value the caller must already know, never a `list()`. This also meant removing the calendar's client-triggered expiry write (Task 12 no longer has any way to resolve a `bookingId` to expire, nor should it) — that bookkeeping moved to an admin-side sweep in `AllBookingsTab` (Task 20), which already holds real `bookingId`s via its own authenticated `bookings.list()` access. The calendar's *display* logic was already correct without this write (it derives "held" vs "available" from `expiresAt` freshness via `isBlockingSlot`, not from the stored `status` string), so nothing about correctness was lost, only an unnecessary and unsafe write path.
+2. `bookingEvents`' create rule accepted any `performedBy` value, letting an unauthenticated caller forge audit-log entries attributed to an arbitrary admin email. Fixed in Task 2's rules: unauthenticated writes may only attribute an event to `'user'`/`'system'`, and an admin-attributed event must match the actual signed-in admin's email.
+3. A separate review pass flagged `hashEmployeeId` (Task 4, then named `sha256Hex`) for hashing low-entropy Employee IDs (`EMP00001`-`EMP99999`) with a single unsalted SHA-256 pass — an attacker could precompute the entire keyspace almost instantly. Fixed with PBKDF2 (100,000 iterations) to substantially raise brute-force cost. This is disclosed as raising cost, not eliminating feasibility, since no server exists in this backend-free architecture to hold a secret pepper.
+
+Every task from 6 onward in this document already reflects these corrections; Tasks 1–5's already-committed code and this plan document were both amended together rather than left inconsistent.
+
+**A third correction, found by a second automated background security review (of the Task 6–10 commit) after Tasks 1–10 were implemented in code:** the `firestore.rules` written in Task 2 had no update exception at all for `submitUtr`'s transition (`pending-payment → pending-verification`, the user claiming they've paid). As written, this meant either the entire payment-submission step of the booking flow would have been silently rejected by Firestore in production (rules fail closed — nothing in the client code would have caught this until real-world testing against a deployed project), or, had a looser rule been added reactively without care, a client could have smuggled in unrelated field changes (e.g. `amount`, `paymentVerifiedBy`) disguised as a UTR submission. Fixed with a narrowly-scoped exception: the payment window must not have already passed (`expiresAt > request.time`, checked in the rule itself — not only client-side, so a client can't bypass the 15-minute window by writing directly), `utr` must be a plausible string (≥6 characters, matching the client-side validation), and the diff is restricted to exactly `status`/`utr`/`updatedAt` on `bookings` and `status` on `bookingSlots`. This is applied retroactively to Task 2's rules text and its manual verification checklist (now 18 scenarios, up from 8) — a reminder that rules changes deserve the same scrutiny as the transaction code that depends on them, and that "no rule exists for this write" is just as much a bug as "the rule is too permissive."
+
+**A fourth correction, found by re-auditing rule coverage for every non-admin transaction after the third correction above (not by an external review this time):** the same class of bug existed for `cancelBookingSelf`'s `bookingSlots` mirror write — it's also called anonymously (from the public status page), and no rule permitted its `confirmed/pending-payment → cancelled` transition on `bookingSlots` either, so self-cancel would have failed atomically in production (the whole transaction rolls back, including the otherwise-valid `bookings` cancellation). Unlike `submitUtr`, this one *can't* simply get a matching public rule exception the same way: `bookingSlots`' deterministic ID (`venue|date|slot`) is fully public and guessable (unlike a `bookingId`), so a rule permitting anyone to write that transition there would let a total stranger free — or otherwise tamper with — a slot they have no connection to, just by knowing its public venue/date/slot. Fixed by removing the `bookingSlots` write from `cancelBookingSelf` entirely (it now only touches `bookings`, which *is* safely scoped by a hard-to-guess `bookingId`) and moving the sync to the admin-side sweep (Task 20), the same pattern already used for stale-payment expiry. This introduced a further subtlety the expiry sweep didn't have: `cancelled` is a permanent status that matches on *every* future reload, whereas `expired` naturally stops matching after the first successful sweep — so a naive cancelled-sync sweep could eventually stomp a different, newer booking that has since reclaimed the same slot key. Fixed by adding `occupiedSince` (Task 3/6) — a plain timestamp (not a pointer to PII) mirroring the current occupant's own `createdAt`, letting the sweep verify it's still syncing the same occupancy episode before writing. Every task from 3 onward that touches `BookingSlotDoc`, `createBooking`, or the Task 20 sweep reflects this; the previously-committed Tasks 3/6 code and this plan document were amended together.
 

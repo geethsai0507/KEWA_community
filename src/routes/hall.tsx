@@ -1,6 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useEffect, useState } from "react";
+import QRCode from "qrcode";
 import { Icon, SiteHeader, SiteFooter } from "@/components/site-chrome";
+import { VENUES, SLOTS, UPI_ID } from "@/lib/hall/constants";
+import { subscribeToCalendar, type DayStatus } from "@/lib/hall/calendar";
+import { verifyMembership } from "@/lib/hall/members";
+import { calculateBookingFee } from "@/lib/hall/fees";
+import { createBooking, submitUtr } from "@/lib/hall/transactions";
 
 export const Route = createFileRoute("/hall")({
   head: () => ({
@@ -38,8 +44,8 @@ function HallPage() {
     <div className="bg-background text-on-surface min-h-screen">
       <SiteHeader active="gatherings" />
 
-      <main className="pt-32 pb-xl px-margin-mobile md:px-margin-desktop max-w-7xl mx-auto">
-        <div role="tablist" aria-label="Hall Management Tabs" className="flex flex-wrap gap-2 mb-lg border-b-2 border-primary">
+      <main className="pt-32 pb-s-xl px-margin-mobile md:px-margin-desktop max-w-7xl mx-auto">
+        <div role="tablist" aria-label="Hall Management Tabs" className="flex flex-wrap gap-2 mb-s-lg border-b-2 border-primary">
           {TABS.map((t) => {
             const active = tab === t.id;
             return (
@@ -79,160 +85,434 @@ function HallPage() {
 }
 
 function CalendarPanel() {
-  const cells = useMemo(() => {
-    // Deterministic pseudo-random so SSR + hydration agree.
-    return Array.from({ length: 31 }, (_, i) => {
-      const day = i + 1;
-      const isWeekend = day % 7 === 6 || day % 7 === 0;
-      const r = (day * 9301 + 49297) % 233280;
-      const n = r / 233280;
-      const status = n > 0.7 ? "full" : n > 0.4 ? "morning" : "free";
-      return { day, isWeekend, status };
-    });
-  }, []);
+  const [venue, setVenue] = useState<string>(VENUES[0].name);
+  const [cursor, setCursor] = useState(() => new Date());
+  const [byDate, setByDate] = useState<Record<string, { Morning: DayStatus; Evening: DayStatus }>>({});
+
+  useEffect(() => {
+    const unsubscribe = subscribeToCalendar(venue, cursor.getFullYear(), cursor.getMonth(), setByDate);
+    return unsubscribe;
+  }, [venue, cursor]);
+
+  const year = cursor.getFullYear();
+  const month = cursor.getMonth();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const firstWeekday = new Date(year, month, 1).getDay();
+
+  const dotForStatus = (s: DayStatus) =>
+    s === "confirmed"
+      ? "status-dot-full"
+      : s === "held"
+        ? "status-dot-evening"
+        : s === "pending"
+          ? "status-dot-morning"
+          : s === "blocked"
+            ? "bg-on-surface/40"
+            : "border border-primary";
+
+  // Most-restrictive-wins: a day shows one dot summarizing both slots, so a fully booked
+  // slot always outranks a still-available one.
+  const PRIORITY: DayStatus[] = ["confirmed", "held", "pending", "blocked", "available"];
+  const worstStatus = (status: { Morning: DayStatus; Evening: DayStatus }) =>
+    PRIORITY.find((s) => status.Morning === s || status.Evening === s) ?? "available";
+
+  const dayCell = (day: number) => {
+    const dateStr = `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+    const status = byDate[dateStr] ?? { Morning: "available" as DayStatus, Evening: "available" as DayStatus };
+    const overall = worstStatus(status);
+    return (
+      <div key={day} className="bg-surface p-4 min-h-[120px] relative group hover:bg-surface-variant transition-colors">
+        <span className="font-headline text-headline-md text-primary opacity-30">{day}</span>
+        <div className="absolute bottom-4 left-4">
+          <div
+            className={`w-4 h-4 rounded-full ${dotForStatus(overall)}`}
+            title={`Morning: ${status.Morning}, Evening: ${status.Evening}`}
+          />
+        </div>
+      </div>
+    );
+  };
 
   return (
-    <div className="space-y-md">
+    <div className="space-y-s-md">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <h2 className="font-headline text-headline-lg text-primary">Availability Calendar</h2>
         <div className="flex flex-wrap gap-4 items-center">
-          <button className="brutalist-button bg-secondary-container text-on-surface px-4 py-2 font-ui-button border-2 border-primary flex items-center gap-2 hover:bg-primary hover:text-on-primary transition-all">
-            <Icon name="event_repeat" /> Find me a free Saturday
-          </button>
+          <select
+            value={venue}
+            onChange={(e) => setVenue(e.target.value)}
+            className="p-2 border-2 border-primary bg-surface font-ui-button"
+          >
+            {VENUES.map((v) => (
+              <option key={v.name} value={v.name}>{v.name}</option>
+            ))}
+          </select>
+          <div className="flex items-center gap-2">
+            <button
+              className="px-3 py-1 border-2 border-primary"
+              onClick={() => setCursor(new Date(year, month - 1, 1))}
+            >
+              ←
+            </button>
+            <span className="font-bold">{cursor.toLocaleDateString("en-IN", { month: "long", year: "numeric" })}</span>
+            <button
+              className="px-3 py-1 border-2 border-primary"
+              onClick={() => setCursor(new Date(year, month + 1, 1))}
+            >
+              →
+            </button>
+          </div>
           <div className="flex items-center gap-4 text-label-md">
-            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full status-dot-morning"></span> Morning</span>
-            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full status-dot-evening"></span> Evening</span>
-            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full status-dot-full"></span> Booked</span>
+            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full status-dot-morning"></span> Pending approval</span>
+            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full status-dot-evening"></span> Held (payment window)</span>
+            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full status-dot-full"></span> Confirmed</span>
           </div>
         </div>
       </div>
 
-      <div className="hidden md:grid grid-cols-7 border-2 border-primary bg-primary gap-[2px]">
-        {["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].map((d) => (
+      <div className="grid grid-cols-7 border-2 border-primary bg-primary gap-[2px]">
+        {["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map((d) => (
           <div key={d} className="bg-primary-container text-on-primary p-3 text-center font-bold uppercase text-xs">{d}</div>
         ))}
-        {cells.map((c) => (
-          <div key={c.day} className="bg-surface p-4 min-h-[120px] relative group hover:bg-surface-variant transition-colors cursor-pointer">
-            <span className="font-headline text-headline-md text-primary opacity-30">{c.day}</span>
-            <div className="absolute bottom-4 left-4 flex gap-1">
-              {c.status === "full" && <div className="w-4 h-4 rounded-full status-dot-full" />}
-              {c.status === "morning" && <div className="w-4 h-4 rounded-full status-dot-morning" />}
-              {c.status === "free" && <div className="w-2 h-2 rounded-full border border-primary" />}
-            </div>
-            {c.isWeekend && (
-              <span className="absolute top-2 right-2 text-[10px] font-bold text-secondary uppercase">Weekend</span>
-            )}
-          </div>
-        ))}
-      </div>
-
-      <div className="md:hidden space-y-4">
-        <div className="brutalist-card p-4 bg-surface flex justify-between items-center">
-          <div>
-            <div className="font-headline text-primary">Dec 14, Saturday</div>
-            <div className="text-sm opacity-70">Morning Available • Evening Booked</div>
-          </div>
-          <button className="bg-primary text-on-primary px-4 py-2 font-ui-button">Book</button>
-        </div>
-        <div className="brutalist-card p-4 bg-surface flex justify-between items-center grayscale opacity-50">
-          <div>
-            <div className="font-headline text-primary">Dec 15, Sunday</div>
-            <div className="text-sm opacity-70">Fully Booked</div>
-          </div>
-          <Icon name="lock" className="text-error" />
-        </div>
+        {Array.from({ length: firstWeekday }, (_, i) => <div key={`pad-${i}`} className="bg-surface" />)}
+        {Array.from({ length: daysInMonth }, (_, i) => dayCell(i + 1))}
       </div>
     </div>
   );
 }
 
+function UpiQrCode({ amount, bookingNumber }: { amount: number; bookingNumber: string }) {
+  const [dataUrl, setDataUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    const uri = `upi://pay?pa=${encodeURIComponent(UPI_ID)}&pn=${encodeURIComponent("Executives Club")}&am=${amount}&cu=INR&tn=${encodeURIComponent(bookingNumber)}`;
+    let cancelled = false;
+    QRCode.toDataURL(uri, { margin: 1, width: 220 }).then((url) => {
+      if (!cancelled) setDataUrl(url);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [amount, bookingNumber]);
+
+  if (!dataUrl) return null;
+  return <img src={dataUrl} alt="Scan to pay via UPI" width={220} height={220} className="border-2 border-primary" />;
+}
+
+type BookingStep = 1 | 2 | 3 | 4;
+
+interface BookingFormState {
+  isMember: boolean | null;
+  empId: string;
+  verified: boolean;
+  name: string;
+  phone: string;
+  email: string;
+  venue: string;
+  date: string;
+  slot: "Morning" | "Evening" | null;
+  purpose: string;
+  duration: string;
+  acceptedTnc: boolean;
+}
+
+const EMPTY_FORM: BookingFormState = {
+  isMember: null,
+  empId: "",
+  verified: false,
+  name: "",
+  phone: "",
+  email: "",
+  venue: "",
+  date: "",
+  slot: null,
+  purpose: "",
+  duration: "",
+  acceptedTnc: false,
+};
+
 function BookingPanel() {
+  const [step, setStep] = useState<BookingStep>(1);
+  const [form, setForm] = useState<BookingFormState>(EMPTY_FORM);
+  const [verifyError, setVerifyError] = useState("");
+  const [verifying, setVerifying] = useState(false);
+  const [bookingResult, setBookingResult] = useState<{ bookingId: string; bookingNumber: string; lookupToken: string; status: "pending-payment" | "pending-approval" } | null>(null);
+  const [utr, setUtr] = useState("");
+  const [submitError, setSubmitError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  const handleVerify = async () => {
+    if (!form.empId.trim()) {
+      setVerifyError("Enter your Employee ID");
+      return;
+    }
+    setVerifying(true);
+    setVerifyError("");
+    try {
+      const isMember = await verifyMembership(form.empId.trim());
+      if (!isMember) {
+        setVerifyError("No member found with this Employee ID");
+        return;
+      }
+      setForm((f) => ({ ...f, verified: true, isMember: true }));
+    } finally {
+      setVerifying(false);
+    }
+  };
+
+  const fee = form.venue ? calculateBookingFee(form.isMember === true, form.venue) : null;
+
+  const canProceedStep1 = form.isMember === false || (form.isMember === true && form.verified);
+  const canProceedStep2 = Boolean(
+    form.name.trim() &&
+    /^\d{10}$/.test(form.phone) &&
+    /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email) &&
+    form.venue &&
+    form.date &&
+    new Date(`${form.date}T00:00:00`) >= new Date(new Date().toDateString()) &&
+    form.slot &&
+    form.purpose.trim() &&
+    form.duration.trim() &&
+    form.acceptedTnc,
+  );
+
   return (
-    <div className="flex flex-col lg:flex-row gap-lg">
-      <div className="flex-grow space-y-lg">
+    <div className="flex flex-col lg:flex-row gap-s-lg">
+      <div className="flex-grow space-y-s-lg">
         <nav className="flex items-center gap-4 text-sm font-bold uppercase tracking-tighter overflow-x-auto pb-2">
-          <span className="text-primary whitespace-nowrap">1. Date & Slot</span>
-          <Icon name="arrow_forward" className="text-xs" />
-          <span className="text-on-surface/40 whitespace-nowrap">2. Details</span>
-          <Icon name="arrow_forward" className="text-xs" />
-          <span className="text-on-surface/40 whitespace-nowrap">3. Add-ons</span>
-          <Icon name="arrow_forward" className="text-xs" />
-          <span className="text-on-surface/40 whitespace-nowrap">4. Contact</span>
+          {(["1. Membership", "2. Details", "3. Payment", "4. Confirmation"] as const).map((label, i) => (
+            <span key={label} className={step === i + 1 ? "text-primary whitespace-nowrap" : "text-on-surface/40 whitespace-nowrap"}>
+              {label}
+            </span>
+          ))}
         </nav>
 
-        <section className="space-y-6">
-          <div className="grid md:grid-cols-2 gap-md">
-            <div className="space-y-2">
-              <label className="font-ui-button text-primary block">Select Date</label>
-              <input type="date" className="w-full p-4 border-2 border-primary bg-surface focus:ring-0 focus:border-secondary-container" />
+        {step === 1 && (
+          <section className="space-y-6">
+            <div className="flex gap-4">
+              <button
+                className={`p-4 border-2 border-primary font-bold ${form.isMember === true ? "bg-primary text-on-primary" : ""}`}
+                onClick={() => setForm((f) => ({ ...f, isMember: true }))}
+              >
+                I'm a member
+              </button>
+              <button
+                className={`p-4 border-2 border-primary font-bold ${form.isMember === false ? "bg-primary text-on-primary" : ""}`}
+                onClick={() => setForm((f) => ({ ...f, isMember: false, verified: false }))}
+              >
+                I'm not a member
+              </button>
             </div>
-            <div className="space-y-2">
-              <label className="font-ui-button text-primary block">Time Slot</label>
-              <div className="grid grid-cols-2 gap-2">
-                <button className="p-4 border-2 border-primary font-bold text-sm hover:bg-primary-container hover:text-on-primary transition-all">08:00 - 14:00</button>
-                <button className="p-4 border-2 border-primary font-bold text-sm bg-primary text-on-primary">16:00 - 22:00</button>
+            {form.isMember === true && (
+              <div className="space-y-2">
+                <label className="font-ui-button text-primary block">Employee ID</label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={form.empId}
+                    onChange={(e) => setForm((f) => ({ ...f, empId: e.target.value, verified: false }))}
+                    className="flex-grow p-4 border-2 border-primary bg-surface"
+                  />
+                  <button
+                    onClick={handleVerify}
+                    disabled={verifying}
+                    className="px-6 border-2 border-primary bg-secondary-container font-ui-button"
+                  >
+                    {verifying ? "Verifying…" : "Verify"}
+                  </button>
+                </div>
+                {verifyError && <p className="text-error text-sm">{verifyError}</p>}
+                {form.verified && <p className="text-success text-sm">Verified ✅</p>}
+              </div>
+            )}
+            <div className="flex justify-end pt-s-md">
+              <button
+                disabled={!canProceedStep1}
+                onClick={() => setStep(2)}
+                className="brutalist-button bg-secondary-container text-on-surface px-12 py-4 font-ui-button text-lg border-2 border-primary disabled:opacity-40"
+              >
+                Next: Details
+              </button>
+            </div>
+          </section>
+        )}
+
+        {step === 2 && (
+          <section className="space-y-6">
+            <div className="grid md:grid-cols-2 gap-s-md">
+              <div className="space-y-2">
+                <label className="font-ui-button text-primary block">Full Name</label>
+                <input type="text" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} className="w-full p-4 border-2 border-primary bg-surface" />
+              </div>
+              <div className="space-y-2">
+                <label className="font-ui-button text-primary block">Phone (10 digits)</label>
+                <input type="tel" value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))} className="w-full p-4 border-2 border-primary bg-surface" />
+              </div>
+              <div className="space-y-2">
+                <label className="font-ui-button text-primary block">Email</label>
+                <input type="email" value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} className="w-full p-4 border-2 border-primary bg-surface" />
+              </div>
+              <div className="space-y-2">
+                <label className="font-ui-button text-primary block">Venue</label>
+                <select value={form.venue} onChange={(e) => setForm((f) => ({ ...f, venue: e.target.value }))} className="w-full p-4 border-2 border-primary bg-surface">
+                  <option value="">Select Venue</option>
+                  {VENUES.map((v) => <option key={v.name} value={v.name}>{v.name}</option>)}
+                </select>
+              </div>
+              <div className="space-y-2">
+                <label className="font-ui-button text-primary block">Date</label>
+                <input type="date" value={form.date} onChange={(e) => setForm((f) => ({ ...f, date: e.target.value }))} className="w-full p-4 border-2 border-primary bg-surface" />
+              </div>
+              <div className="space-y-2">
+                <label className="font-ui-button text-primary block">Time Slot</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {(Object.keys(SLOTS) as Array<"Morning" | "Evening">).map((s) => (
+                    <button
+                      key={s}
+                      onClick={() => setForm((f) => ({ ...f, slot: s }))}
+                      className={`p-4 border-2 border-primary font-bold text-sm ${form.slot === s ? "bg-primary text-on-primary" : ""}`}
+                    >
+                      {SLOTS[s].label} ({SLOTS[s].time})
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
-          </div>
-
-          <div className="space-y-4">
-            <label className="font-ui-button text-primary block">Event Details</label>
-            <input type="text" placeholder="e.g., Birthday Party, Community Meeting" className="w-full p-4 border-2 border-primary bg-surface focus:ring-0" />
-            <textarea rows={4} placeholder="Special Requirements" className="w-full p-4 border-2 border-primary bg-surface focus:ring-0" />
-          </div>
-
-          <div className="space-y-4">
-            <label className="font-ui-button text-primary block">Equipment Add-ons</label>
-            <div className="grid md:grid-cols-3 gap-4">
-              <div className="p-4 border-2 border-primary flex flex-col gap-2">
-                <Icon name="chair" />
-                <span className="font-bold">Extra Chairs</span>
-                <input type="number" defaultValue={0} className="border-2 border-primary p-2 text-center" />
-              </div>
-              <div className="p-4 border-2 border-primary flex flex-col gap-2">
-                <Icon name="podium" />
-                <span className="font-bold">Sound System</span>
-                <button className="border-2 border-primary p-2 font-ui-button hover:bg-primary-container hover:text-on-primary">Add ₹1500</button>
-              </div>
-              <div className="p-4 border-2 border-primary flex flex-col gap-2">
-                <Icon name="ac_unit" />
-                <span className="font-bold">Full AC</span>
-                <button className="border-2 border-primary p-2 font-ui-button hover:bg-primary-container hover:text-on-primary">Add ₹2000</button>
-              </div>
+            <div className="space-y-4">
+              <label className="font-ui-button text-primary block">Purpose</label>
+              <input type="text" value={form.purpose} onChange={(e) => setForm((f) => ({ ...f, purpose: e.target.value }))} className="w-full p-4 border-2 border-primary bg-surface" />
+              <label className="font-ui-button text-primary block">Expected duration of stay</label>
+              <input type="text" value={form.duration} onChange={(e) => setForm((f) => ({ ...f, duration: e.target.value }))} className="w-full p-4 border-2 border-primary bg-surface" />
             </div>
-          </div>
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={form.acceptedTnc} onChange={(e) => setForm((f) => ({ ...f, acceptedTnc: e.target.checked }))} />
+              I accept the Terms & Conditions
+            </label>
+            <div className="flex justify-between pt-s-md">
+              <button onClick={() => setStep(1)} className="px-8 py-4 border-2 border-primary font-ui-button">Back</button>
+              <button
+                disabled={!canProceedStep2 || submitting}
+                onClick={async () => {
+                  setSubmitting(true);
+                  setSubmitError("");
+                  try {
+                    const result = await createBooking({
+                      name: form.name,
+                      empId: form.empId,
+                      phone: form.phone,
+                      email: form.email,
+                      venue: form.venue,
+                      date: form.date,
+                      slot: form.slot!,
+                      purpose: form.purpose,
+                      duration: form.duration,
+                      isMember: form.isMember === true,
+                    });
+                    setBookingResult(result);
+                    setStep(3);
+                  } catch (err) {
+                    console.error("createBooking failed:", err);
+                    setSubmitError(
+                      err instanceof Error && err.message === "SLOT_TAKEN"
+                        ? "This slot was just taken, please choose another."
+                        : err instanceof Error && err.message === "DATE_BLOCKED"
+                          ? "This date is blocked for this venue, please choose another."
+                          : "Something went wrong, please try again.",
+                    );
+                  } finally {
+                    setSubmitting(false);
+                  }
+                }}
+                className="brutalist-button bg-secondary-container text-on-surface px-12 py-4 font-ui-button text-lg border-2 border-primary disabled:opacity-40"
+              >
+                {submitting ? "Submitting…" : "Next: Review & Pay"}
+              </button>
+            </div>
+            {submitError && <p className="text-error text-sm">{submitError}</p>}
+          </section>
+        )}
 
-          <div className="flex justify-end pt-md">
-            <button className="brutalist-button bg-secondary-container text-on-surface px-12 py-4 font-ui-button text-lg border-2 border-primary hover:bg-primary hover:text-on-primary transition-all flex items-center gap-3">
-              Next: Review Details <Icon name="arrow_forward" />
-            </button>
-          </div>
-        </section>
+        {step === 3 && bookingResult && (
+          <section className="space-y-6">
+            {bookingResult.status === "pending-approval" ? (
+              <div className="brutalist-card p-6 bg-surface space-y-2">
+                <h3 className="font-headline text-headline-md text-primary">Awaiting approval</h3>
+                <p>The venue already has a booking that day in the other slot, so an admin needs to review this one first. You'll get an email with payment instructions once it's approved.</p>
+                <p className="font-bold">Booking Number: {bookingResult.bookingNumber}</p>
+              </div>
+            ) : (
+              <div className="brutalist-card p-6 bg-surface space-y-4">
+                <h3 className="font-headline text-headline-md text-primary">Pay via UPI</h3>
+                <p>Amount: <strong>₹{calculateBookingFee(form.isMember === true, form.venue)}</strong></p>
+                <p>UPI ID: <strong>{UPI_ID}</strong></p>
+                <UpiQrCode
+                  amount={calculateBookingFee(form.isMember === true, form.venue)}
+                  bookingNumber={bookingResult.bookingNumber}
+                />
+                <p className="text-sm opacity-70">Scan the QR with any UPI app, or pay manually to the UPI ID above. Complete the payment within 15 minutes, then enter the UTR number below.</p>
+                <div className="space-y-2">
+                  <label className="font-ui-button text-primary block">UTR Number</label>
+                  <input type="text" value={utr} onChange={(e) => setUtr(e.target.value)} className="w-full p-4 border-2 border-primary bg-surface" />
+                </div>
+                {submitError && <p className="text-error text-sm">{submitError}</p>}
+                <button
+                  disabled={utr.trim().length < 6 || submitting}
+                  onClick={async () => {
+                    setSubmitting(true);
+                    setSubmitError("");
+                    try {
+                      await submitUtr(bookingResult.bookingId, utr.trim());
+                      setStep(4);
+                    } catch (err) {
+                      setSubmitError(
+                        err instanceof Error && err.message === "EXPIRED"
+                          ? "This booking has expired, please start again."
+                          : err instanceof Error && err.message === "UTR_ALREADY_USED"
+                            ? "This UTR has already been used for another booking."
+                            : "Something went wrong, please try again.",
+                      );
+                    } finally {
+                      setSubmitting(false);
+                    }
+                  }}
+                  className="px-12 py-4 bg-primary text-on-primary font-ui-button disabled:opacity-40"
+                >
+                  {submitting ? "Submitting…" : "I've Paid — Submit UTR"}
+                </button>
+              </div>
+            )}
+          </section>
+        )}
+
+        {step === 4 && bookingResult && (
+          <section className="space-y-4">
+            <div className="brutalist-card p-6 bg-surface space-y-2">
+              <h3 className="font-headline text-headline-md text-primary">Submitted!</h3>
+              <p>Booking Number: <strong>{bookingResult.bookingNumber}</strong></p>
+              <p className="text-sm opacity-70">
+                We've sent a status link to {form.email}. An admin will verify your payment and confirm the booking shortly.
+              </p>
+              <button
+                onClick={() => {
+                  setForm(EMPTY_FORM);
+                  setBookingResult(null);
+                  setUtr("");
+                  setStep(1);
+                }}
+                className="px-8 py-4 border-2 border-primary font-ui-button"
+              >
+                Make another booking
+              </button>
+            </div>
+          </section>
+        )}
       </div>
 
       <aside className="w-full lg:w-80 shrink-0">
         <div className="sticky top-32 brutalist-card bg-surface p-6 space-y-6">
-          <h3 className="font-headline text-headline-md text-primary border-b-2 border-primary pb-2 uppercase tracking-tighter">Cost Summary</h3>
-          <div className="space-y-3">
-            <div className="flex justify-between text-sm">
-              <span>Base Rental (Slot B)</span><span className="font-bold">₹4,500</span>
-            </div>
-            <div className="flex justify-between text-sm">
-              <span>Security Deposit</span><span className="font-bold text-tertiary">₹2,000</span>
-            </div>
-            <div className="flex justify-between text-sm text-success">
-              <span>Member Discount (10%)</span><span className="font-bold">-₹450</span>
-            </div>
-          </div>
-          <div className="border-t-2 border-primary pt-4 flex justify-between items-end">
-            <div>
-              <div className="text-[10px] font-bold uppercase opacity-60">Total Estimated</div>
-              <div className="font-headline text-headline-lg text-primary leading-none">₹6,050</div>
-            </div>
-            <div className="text-[10px] text-right font-bold opacity-60 uppercase">*Tax calculated at checkout</div>
-          </div>
-          <div className="bg-primary-container/10 p-3 border-l-4 border-primary text-xs">
-            Note: Deposits are fully refundable within 48 hours of event completion, subject to damage assessment.
+          <h3 className="font-headline text-headline-md text-primary border-b-2 border-primary pb-2 uppercase tracking-tighter">Fee</h3>
+          <div className="font-headline text-headline-lg text-primary leading-none">
+            {fee !== null ? `₹${fee}` : "Select a venue"}
           </div>
         </div>
       </aside>
@@ -249,7 +529,7 @@ function MyBookingsPanel() {
   ];
 
   return (
-    <div className="max-w-4xl space-y-md">
+    <div className="max-w-4xl space-y-s-md">
       <div className="flex justify-between items-end">
         <h2 className="font-headline text-headline-lg text-primary">Your History</h2>
         <span className="text-sm opacity-60 font-bold uppercase">Logged in as resident #402</span>
@@ -301,24 +581,28 @@ function MyBookingsPanel() {
 
 function RulesPanel() {
   return (
-    <div className="grid md:grid-cols-2 gap-lg">
+    <div className="grid md:grid-cols-2 gap-s-lg">
       <div className="space-y-6">
         <h2 className="font-headline text-headline-lg text-primary">Hall Usage Rates</h2>
         <div className="brutalist-card overflow-hidden">
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-primary text-on-primary uppercase text-xs font-bold tracking-widest">
-                <th className="p-4">Slot</th><th className="p-4">Resident</th><th className="p-4">Guest</th>
+                <th className="p-4">Venue</th><th className="p-4">Member</th><th className="p-4">Non-Member</th>
               </tr>
             </thead>
             <tbody className="text-sm">
-              <tr className="border-b-2 border-primary/10"><td className="p-4 font-bold">Morning (8AM-2PM)</td><td className="p-4">₹3,500</td><td className="p-4">₹7,000</td></tr>
-              <tr className="border-b-2 border-primary/10 bg-surface-variant/30"><td className="p-4 font-bold">Evening (4PM-10PM)</td><td className="p-4">₹5,000</td><td className="p-4">₹9,500</td></tr>
-              <tr className="border-b-2 border-primary/10"><td className="p-4 font-bold">Full Day</td><td className="p-4">₹8,000</td><td className="p-4">₹15,000</td></tr>
+              {VENUES.map((v, i) => (
+                <tr key={v.name} className={`border-b-2 border-primary/10 ${i % 2 === 1 ? "bg-surface-variant/30" : ""}`}>
+                  <td className="p-4 font-bold">{v.name}</td>
+                  <td className="p-4">₹{v.feeMember.toLocaleString("en-IN")}</td>
+                  <td className="p-4">₹{v.feeNonMember.toLocaleString("en-IN")}</td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
-        <p className="text-sm opacity-70 italic">* Rates exclude cleaning charges (₹500 fixed) and electricity (per unit).</p>
+        <p className="text-sm opacity-70 italic">* Rate is per slot (Morning {SLOTS.Morning.time} or Evening {SLOTS.Evening.time}).</p>
       </div>
       <div className="space-y-6">
         <h2 className="font-headline text-headline-lg text-primary">Key Terms</h2>

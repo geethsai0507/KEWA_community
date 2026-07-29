@@ -1,0 +1,149 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isAdmin() {
+      return request.auth != null;
+    }
+
+    // Shared field checks for bookingSlots/bookings create. expiresAt is bounded to at most
+    // ~20 minutes out (the 15-minute payment window plus slack) so a forged create can't
+    // squat a slot indefinitely by claiming an artificially distant expiry. occupiedSince
+    // just has to be a real server timestamp — it's not a secret, only a correlation key the
+    // admin sweep uses to avoid stomping a newer booking (see bookingSlots' comment below).
+    function isCreateFieldsValid() {
+      let d = request.resource.data;
+      return d.status in ['pending-payment', 'pending-approval']
+        && d.venue is string && d.date is string && d.slot in ['Morning', 'Evening']
+        && d.occupiedSince == request.time
+        && (
+          (d.status == 'pending-approval' && d.expiresAt == null)
+          || (
+            d.status == 'pending-payment'
+            && d.expiresAt is timestamp
+            && d.expiresAt > request.time
+            && d.expiresAt < request.time + duration.value(20, 'm')
+          )
+        );
+    }
+
+    // Public availability layer only: venue/date/slot/status/expiresAt/occupiedSince.
+    // Deliberately carries NO pointer (bookingId, lookupToken, bookingNumber) to the private
+    // bookings record — this collection is publicly listable (the calendar needs it), and
+    // Firestore rules cannot redact individual fields from a list response. Any pointer field
+    // here would let anyone who lists this collection harvest it and read full PII via
+    // bookings' public get-by-id, and would also let them forge the self-cancel transition on
+    // someone else's booking (see bookings/{bookingId} below) since that rule only checks the
+    // transition shape, not identity — the actual authorization boundary is "you can't
+    // discover the ID in the first place." occupiedSince is NOT such a pointer — it's a plain
+    // timestamp matching the current occupant's own createdAt, used only so the admin sweep
+    // (Task 20) can verify it's syncing the same occupancy episode rather than stomping a
+    // newer booking that has since legitimately reclaimed this slot.
+    // Expiring a stale pending-payment slot (status -> expired) is an admin-only sweep (run
+    // from the authenticated admin panel, which already holds bookingIds via its own
+    // privileged bookings.list() access) — there is no public write path for this transition,
+    // since the calendar no longer triggers it client-side (see Task 12's design note).
+    // submitUtr's transition (pending-payment -> pending-verification, the user claiming
+    // they've paid) also needs a narrowly-scoped public exception: the payment window must
+    // not have already passed (resource.data.expiresAt > request.time — enforced here, not
+    // just client-side, otherwise a client could submit a UTR after expiry by writing
+    // directly), and the diff is restricted to status only, so this can't be smuggled in
+    // alongside any other field change.
+    match /bookingSlots/{slotId} {
+      allow get, list: if true;
+      allow create: if isCreateFieldsValid();
+      allow update: if isAdmin()
+        || (
+          resource.data.status == 'pending-payment'
+          && request.resource.data.status == 'pending-verification'
+          && resource.data.expiresAt > request.time
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
+        );
+      allow delete: if isAdmin();
+    }
+
+    // Private PII record. get-by-known-ID is public (this is the capability boundary — see
+    // bookingLookup below for the only sanctioned way to learn a bookingId without already
+    // being its creator or an admin). list is admin-only: there is no public query path here.
+    match /bookings/{bookingId} {
+      allow get: if true;
+      allow list: if isAdmin();
+      allow create: if isCreateFieldsValid()
+        && request.resource.data.bookingNumber is string
+        && request.resource.data.lookupToken is string
+        // createBooking writes these as explicit nulls (for a consistent doc schema), not
+        // absent keys — so "not present" alone would reject every legitimate create. Admin
+        // attribution is still blocked: only null is allowed, any real value is rejected.
+        && (!('cancelledBy' in request.resource.data) || request.resource.data.cancelledBy == null)
+        && (!('approvedBy' in request.resource.data) || request.resource.data.approvedBy == null)
+        && (!('paymentVerifiedBy' in request.resource.data) || request.resource.data.paymentVerifiedBy == null)
+        && (!('rejectedBy' in request.resource.data) || request.resource.data.rejectedBy == null);
+      allow update: if isAdmin()
+        || (
+          resource.data.status in ['confirmed', 'pending-payment']
+          && request.resource.data.status == 'cancelled'
+          && request.resource.data.cancelledBy == 'user'
+          && request.resource.data.diff(resource.data).affectedKeys()
+               .hasOnly(['status', 'cancelledBy', 'cancelledAt', 'updatedAt'])
+        )
+        || (
+          resource.data.status == 'pending-payment'
+          && request.resource.data.status == 'pending-verification'
+          && resource.data.expiresAt > request.time
+          && request.resource.data.utr is string
+          && request.resource.data.utr.size() >= 6
+          && request.resource.data.diff(resource.data).affectedKeys()
+               .hasOnly(['status', 'utr', 'updatedAt'])
+        );
+      allow delete: if isAdmin();
+    }
+
+    // The ONLY public channel from "I hold this lookupToken" to "here is the bookingId."
+    // Document ID is the token itself, so resolving it is a get() (by a value you must
+    // already know), never a list() — this is what keeps bookingId non-enumerable even
+    // though bookings.get() is public. list is admin-only (no legitimate public need for it).
+    match /bookingLookup/{lookupToken} {
+      allow get: if true;
+      allow list: if isAdmin();
+      // existsAfter(), not exists(): createBooking writes bookings/{bookingId} and this
+      // bookingLookup doc in the SAME atomic transaction, so the bookings doc doesn't exist
+      // yet in already-committed state when this rule runs — exists() would always see it as
+      // absent and reject every legitimate create. existsAfter() checks state as it will be
+      // once the whole transaction commits, which does include the sibling write.
+      allow create: if request.resource.data.keys().hasOnly(['bookingId'])
+        && request.resource.data.bookingId is string
+        && existsAfter(/databases/$(database)/documents/bookings/$(request.resource.data.bookingId));
+      allow update, delete: if isAdmin();
+    }
+
+    // performedBy can't be forged as an arbitrary admin identity: unauthenticated writers may
+    // only attribute an event to 'user' or 'system' (matching what the app's own code does for
+    // self-service actions), and an admin-attributed event must match the actual signed-in
+    // admin's email — otherwise the audit trail could be forged by anyone.
+    match /bookingEvents/{eventId} {
+      allow create: if request.resource.data.performedBy in ['user', 'system']
+        || (isAdmin() && request.resource.data.performedBy == request.auth.token.email);
+      allow get, list: if isAdmin();
+      allow update, delete: if false;
+    }
+
+    match /members/{memberId} {
+      allow get, list, create, update, delete: if isAdmin();
+    }
+
+    match /membersPublic/{memberId} {
+      allow get, list: if true;
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /blockedDates/{dateId} {
+      allow get, list: if true;
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /settings/{settingId} {
+      allow get, list: if true;
+      allow create, update, delete: if isAdmin();
+    }
+  }
+}

@@ -1,5 +1,8 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
 import { Icon, SiteHeader, SiteFooter } from "@/components/site-chrome";
+import { VENUES } from "@/lib/hall/constants";
+import { subscribeToCalendar, type DayStatus } from "@/lib/hall/calendar";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -22,7 +25,7 @@ export const Route = createFileRoute("/")({
 });
 
 const HERO_IMG =
-  "https://lh3.googleusercontent.com/aida-public/AB6AXuCP3MJasb6pMpDAuzcd9cpEz2I5ynlq8jiBF95ASwbAyrV_xzerVGUtYaXRqC3sB7-xNqVRHyEu3mEjOIboyilmC6GgSRVGHOjjpFKeLiDsMnPucpNP9rpggvj1iuZenV0Ff910lyASTK8qbrruIcVYBN7nQ2hQlaWbRRy0wCie9G9vq76wiMAGyyVNLvDpDRgw4wk-F9Jyv1_3QuQjdNp4YrF3msAR76B_p7-k7IjycaCXetNZZ0-wPUxEmBxc5sOlUKYneqZVAAs";
+  "https://images.unsplash.com/photo-1780402411700-96a84f2f483a?fm=jpg&q=80&w=2000";
 
 const gatherings = [
   {
@@ -70,6 +73,72 @@ const contacts = [
   { title: "Electrician / Lift", sub: "Emergency Maintenance", icon: "bolt", hover: "hover:bg-on-surface hover:text-white" },
 ];
 
+function toDateStr(d: Date) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function summarizeDay(day: { Morning: DayStatus; Evening: DayStatus } | undefined) {
+  const morning = day?.Morning ?? "available";
+  const evening = day?.Evening ?? "available";
+  if (morning === "available" && evening === "available") {
+    return { dot: "bg-[#1E4D12]", text: "Available all day" };
+  }
+  if (morning !== "available" && evening !== "available") {
+    return { dot: "bg-error", text: morning === "blocked" || evening === "blocked" ? "Blocked" : "Fully booked" };
+  }
+  const freeSlot = morning === "available" ? "Morning" : "Evening";
+  return { dot: "bg-secondary-container", text: `Partially available (${freeSlot} free)` };
+}
+
+function HallAvailabilityWidget() {
+  const venue = VENUES[0].name;
+  const [byDate, setByDate] = useState<Record<string, { Morning: DayStatus; Evening: DayStatus }>>({});
+
+  const today = new Date();
+  const tomorrow = new Date(today);
+  tomorrow.setDate(today.getDate() + 1);
+  const dayAfter = new Date(today);
+  dayAfter.setDate(today.getDate() + 2);
+  const targets = [today, tomorrow, dayAfter];
+
+  useEffect(() => {
+    // Subscribe to every distinct (year, month) the 3 target days span, so this still works
+    // correctly across a month boundary (e.g. today is the last day of the month).
+    const months = new Set(targets.map((d) => `${d.getFullYear()}-${d.getMonth()}`));
+    const unsubscribes = Array.from(months).map((key) => {
+      const [year, month] = key.split("-").map(Number);
+      return subscribeToCalendar(venue, year, month, (monthData) => {
+        setByDate((prev) => ({ ...prev, ...monthData }));
+      });
+    });
+    return () => unsubscribes.forEach((u) => u());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [venue, toDateStr(today)]);
+
+  const labels = ["Today", "Tomorrow", targets[2].toLocaleDateString("en-IN", { weekday: "long" })];
+
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-gutter">
+      {targets.map((d, i) => {
+        const dateStr = toDateStr(d);
+        const { dot, text } = summarizeDay(byDate[dateStr]);
+        return (
+          <div key={dateStr} className="brutalist-card p-6 bg-white flex flex-col gap-4">
+            <div className="flex justify-between items-start">
+              <span className="font-label-md text-label-md text-on-surface-variant uppercase">{labels[i]}</span>
+              <span className={`w-3 h-3 rounded-full ${dot}`}></span>
+            </div>
+            <div className="font-headline text-headline-md">
+              {d.toLocaleDateString("en-IN", { month: "short", day: "numeric" })}
+            </div>
+            <p className="font-body text-body-md text-on-surface-variant">{text}</p>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function Home() {
   return (
     <div className="bg-background text-on-background">
@@ -78,7 +147,7 @@ function Home() {
       <main className="pt-24">
         {/* Hero */}
         <section className="bg-primary text-on-primary min-h-[870px] flex flex-col md:flex-row items-stretch overflow-hidden relative">
-          <div className="flex-1 flex flex-col justify-center px-margin-mobile md:px-margin-desktop py-xl z-10">
+          <div className="flex-1 flex flex-col justify-center px-margin-mobile md:px-margin-desktop py-s-xl z-10">
             <h1 className="hero-headline font-display text-display-lg-mobile md:text-display-lg mb-8 max-w-2xl">
               A neighborhood for everyone.
             </h1>
@@ -101,7 +170,7 @@ function Home() {
             <div className="absolute inset-0 overflow-hidden">
               <img
                 className="hero-img w-full h-full object-cover"
-                alt="Vibrant Executives Club community hall in golden hour light"
+                alt="Executives Club community hall building illuminated at night"
                 src={HERO_IMG}
               />
             </div>
@@ -112,45 +181,20 @@ function Home() {
         </section>
 
         {/* Hall availability */}
-        <section className="px-margin-mobile md:px-margin-desktop py-lg bg-surface">
-          <div className="flex flex-col md:flex-row gap-gutter justify-between items-end mb-lg">
+        <section className="px-margin-mobile md:px-margin-desktop py-s-lg bg-surface">
+          <div className="flex flex-col md:flex-row gap-gutter justify-between items-end mb-s-lg">
             <h2 className="font-headline text-headline-lg text-primary">Hall Availability</h2>
             <Link to="/hall" className="font-ui-button text-ui-button text-primary flex items-center gap-2 hover:underline">
               View full calendar <Icon name="arrow_forward" />
             </Link>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-gutter">
-            <div className="brutalist-card p-6 bg-white flex flex-col gap-4">
-              <div className="flex justify-between items-start">
-                <span className="font-label-md text-label-md text-on-surface-variant uppercase">Today</span>
-                <span className="w-3 h-3 rounded-full bg-[#1E4D12]"></span>
-              </div>
-              <div className="font-headline text-headline-md">Oct 24</div>
-              <p className="font-body text-body-md text-on-surface-variant">Available for short bookings (under 2 hours)</p>
-            </div>
-            <div className="brutalist-card p-6 bg-white flex flex-col gap-4">
-              <div className="flex justify-between items-start">
-                <span className="font-label-md text-label-md text-on-surface-variant uppercase">Tomorrow</span>
-                <span className="w-3 h-3 rounded-full bg-error"></span>
-              </div>
-              <div className="font-headline text-headline-md">Oct 25</div>
-              <p className="font-body text-body-md text-on-surface-variant">Fully booked: Annual General Meeting</p>
-            </div>
-            <div className="brutalist-card p-6 bg-white flex flex-col gap-4">
-              <div className="flex justify-between items-start">
-                <span className="font-label-md text-label-md text-on-surface-variant uppercase">Oct 26</span>
-                <span className="w-3 h-3 rounded-full bg-[#1E4D12]"></span>
-              </div>
-              <div className="font-headline text-headline-md">Saturday</div>
-              <p className="font-body text-body-md text-on-surface-variant">Free all day. Perfect for family events.</p>
-            </div>
-          </div>
+          <HallAvailabilityWidget />
         </section>
 
         {/* Gatherings */}
-        <section id="gatherings" className="bg-secondary-container py-xl">
+        <section id="gatherings" className="bg-secondary-container py-s-xl">
           <div className="px-margin-mobile md:px-margin-desktop">
-            <div className="mb-lg">
+            <div className="mb-s-lg">
               <h2 className="font-display text-display-lg-mobile md:text-display-lg text-on-secondary-fixed mb-2">
                 Upcoming Gatherings
               </h2>
@@ -183,8 +227,8 @@ function Home() {
         </section>
 
         {/* Notice board */}
-        <section id="notices" className="px-margin-mobile md:px-margin-desktop py-xl">
-          <h2 className="font-headline text-headline-lg mb-lg text-primary flex items-center gap-4">
+        <section id="notices" className="px-margin-mobile md:px-margin-desktop py-s-xl">
+          <h2 className="font-headline text-headline-lg mb-s-lg text-primary flex items-center gap-4">
             <Icon name="campaign" className="text-4xl" /> Notice Board
           </h2>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-margin-desktop">
@@ -234,8 +278,8 @@ function Home() {
         </section>
 
         {/* Gallery */}
-        <section id="gallery" className="bg-surface-container-low py-xl overflow-hidden">
-          <div className="px-margin-mobile md:px-margin-desktop mb-lg text-center">
+        <section id="gallery" className="bg-surface-container-low py-s-xl overflow-hidden">
+          <div className="px-margin-mobile md:px-margin-desktop mb-s-lg text-center">
             <h2 className="font-display text-display-lg-mobile md:text-display-lg text-primary">Community Moments</h2>
             <p className="font-body text-body-lg text-on-surface-variant">Captured during our recent festivals and workshops.</p>
           </div>
@@ -251,7 +295,7 @@ function Home() {
         </section>
 
         {/* Emergency contacts */}
-        <section id="contacts" className="px-margin-mobile md:px-margin-desktop py-xl border-y-2 border-primary">
+        <section id="contacts" className="px-margin-mobile md:px-margin-desktop py-s-xl border-y-2 border-primary">
           <div className="flex flex-col lg:flex-row gap-margin-desktop items-start">
             <div className="lg:w-1/3">
               <h2 className="font-headline text-headline-lg text-primary mb-4">Emergency Contacts</h2>
