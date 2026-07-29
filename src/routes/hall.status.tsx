@@ -61,8 +61,8 @@ function StatusPage() {
   return (
     <div className="bg-background text-on-surface min-h-screen">
       <SiteHeader active="gatherings" />
-      <main className="pt-32 pb-xl px-margin-mobile md:px-margin-desktop max-w-3xl mx-auto">
-        <h1 className="font-headline text-headline-lg text-primary mb-lg">Booking Status</h1>
+      <main className="pt-32 pb-s-xl px-margin-mobile md:px-margin-desktop max-w-3xl mx-auto">
+        <h1 className="font-headline text-headline-lg text-primary mb-s-lg">Booking Status</h1>
         {loading && <p>Loading…</p>}
         {error && <p className="text-error">{error}</p>}
         {booking && (

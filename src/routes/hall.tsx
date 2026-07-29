@@ -43,8 +43,8 @@ function HallPage() {
     <div className="bg-background text-on-surface min-h-screen">
       <SiteHeader active="gatherings" />
 
-      <main className="pt-32 pb-xl px-margin-mobile md:px-margin-desktop max-w-7xl mx-auto">
-        <div role="tablist" aria-label="Hall Management Tabs" className="flex flex-wrap gap-2 mb-lg border-b-2 border-primary">
+      <main className="pt-32 pb-s-xl px-margin-mobile md:px-margin-desktop max-w-7xl mx-auto">
+        <div role="tablist" aria-label="Hall Management Tabs" className="flex flex-wrap gap-2 mb-s-lg border-b-2 border-primary">
           {TABS.map((t) => {
             const active = tab === t.id;
             return (
@@ -128,7 +128,7 @@ function CalendarPanel() {
   };
 
   return (
-    <div className="space-y-md">
+    <div className="space-y-s-md">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <h2 className="font-headline text-headline-lg text-primary">Availability Calendar</h2>
         <div className="flex flex-wrap gap-4 items-center">
@@ -253,8 +253,8 @@ function BookingPanel() {
   );
 
   return (
-    <div className="flex flex-col lg:flex-row gap-lg">
-      <div className="flex-grow space-y-lg">
+    <div className="flex flex-col lg:flex-row gap-s-lg">
+      <div className="flex-grow space-y-s-lg">
         <nav className="flex items-center gap-4 text-sm font-bold uppercase tracking-tighter overflow-x-auto pb-2">
           {(["1. Membership", "2. Details", "3. Payment", "4. Confirmation"] as const).map((label, i) => (
             <span key={label} className={step === i + 1 ? "text-primary whitespace-nowrap" : "text-on-surface/40 whitespace-nowrap"}>
@@ -301,7 +301,7 @@ function BookingPanel() {
                 {form.verified && <p className="text-success text-sm">Verified ✅</p>}
               </div>
             )}
-            <div className="flex justify-end pt-md">
+            <div className="flex justify-end pt-s-md">
               <button
                 disabled={!canProceedStep1}
                 onClick={() => setStep(2)}
@@ -315,7 +315,7 @@ function BookingPanel() {
 
         {step === 2 && (
           <section className="space-y-6">
-            <div className="grid md:grid-cols-2 gap-md">
+            <div className="grid md:grid-cols-2 gap-s-md">
               <div className="space-y-2">
                 <label className="font-ui-button text-primary block">Full Name</label>
                 <input type="text" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} className="w-full p-4 border-2 border-primary bg-surface" />
@@ -364,7 +364,7 @@ function BookingPanel() {
               <input type="checkbox" checked={form.acceptedTnc} onChange={(e) => setForm((f) => ({ ...f, acceptedTnc: e.target.checked }))} />
               I accept the Terms & Conditions
             </label>
-            <div className="flex justify-between pt-md">
+            <div className="flex justify-between pt-s-md">
               <button onClick={() => setStep(1)} className="px-8 py-4 border-2 border-primary font-ui-button">Back</button>
               <button
                 disabled={!canProceedStep2 || submitting}
@@ -500,7 +500,7 @@ function MyBookingsPanel() {
   ];
 
   return (
-    <div className="max-w-4xl space-y-md">
+    <div className="max-w-4xl space-y-s-md">
       <div className="flex justify-between items-end">
         <h2 className="font-headline text-headline-lg text-primary">Your History</h2>
         <span className="text-sm opacity-60 font-bold uppercase">Logged in as resident #402</span>
@@ -552,7 +552,7 @@ function MyBookingsPanel() {
 
 function RulesPanel() {
   return (
-    <div className="grid md:grid-cols-2 gap-lg">
+    <div className="grid md:grid-cols-2 gap-s-lg">
       <div className="space-y-6">
         <h2 className="font-headline text-headline-lg text-primary">Hall Usage Rates</h2>
         <div className="brutalist-card overflow-hidden">

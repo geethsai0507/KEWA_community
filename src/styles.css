@@ -51,13 +51,16 @@
   --text-ui-button--line-height: 1;
   --text-ui-button--font-weight: 700;
 
-  --spacing-xs: 4px;
-  --spacing-sm: 12px;
+  /* Named "s-*" (not "xs/sm/md/lg/xl") to avoid colliding with Tailwind's built-in
+     max-w-{sm,md,lg,xl} container scale, which also lives in the spacing theme
+     namespace — a same-name collision here silently overrides those container widths. */
+  --spacing-s-xs: 4px;
+  --spacing-s-sm: 12px;
   --spacing-base: 8px;
-  --spacing-md: 24px;
+  --spacing-s-md: 24px;
   --spacing-gutter: 24px;
-  --spacing-lg: 48px;
-  --spacing-xl: 80px;
+  --spacing-s-lg: 48px;
+  --spacing-s-xl: 80px;
   --spacing-margin-mobile: 16px;
   --spacing-margin-desktop: 64px;
 

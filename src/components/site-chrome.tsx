@@ -44,8 +44,8 @@ export function SiteHeader({ active }: { active: "status" | "gatherings" | "noti
 
 export function SiteFooter() {
   return (
-    <footer className="bg-primary text-on-primary py-xl px-margin-mobile md:px-margin-desktop w-full overflow-hidden relative">
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-gutter mb-xl relative z-10">
+    <footer className="bg-primary text-on-primary py-s-xl px-margin-mobile md:px-margin-desktop w-full overflow-hidden relative">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-gutter mb-s-xl relative z-10">
         <div className="col-span-1 md:col-span-2">
           <div className="font-headline text-headline-lg mb-6">KEWA Community</div>
           <p className="font-body text-body-md opacity-80 max-w-sm mb-8">
@@ -80,7 +80,7 @@ export function SiteFooter() {
           </ul>
         </div>
       </div>
-      <div className="border-t border-on-primary/20 pt-lg relative z-10">
+      <div className="border-t border-on-primary/20 pt-s-lg relative z-10">
         <p className="font-body text-body-md opacity-60">© 2024 KEWA Residential Colony. All rights reserved.</p>
       </div>
       <div className="absolute -bottom-12 md:-bottom-24 -right-12 pointer-events-none select-none opacity-20">

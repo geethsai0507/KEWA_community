@@ -78,7 +78,7 @@ function Home() {
       <main className="pt-24">
         {/* Hero */}
         <section className="bg-primary text-on-primary min-h-[870px] flex flex-col md:flex-row items-stretch overflow-hidden relative">
-          <div className="flex-1 flex flex-col justify-center px-margin-mobile md:px-margin-desktop py-xl z-10">
+          <div className="flex-1 flex flex-col justify-center px-margin-mobile md:px-margin-desktop py-s-xl z-10">
             <h1 className="hero-headline font-display text-display-lg-mobile md:text-display-lg mb-8 max-w-2xl">
               A neighborhood for everyone.
             </h1>
@@ -112,8 +112,8 @@ function Home() {
         </section>
 
         {/* Hall availability */}
-        <section className="px-margin-mobile md:px-margin-desktop py-lg bg-surface">
-          <div className="flex flex-col md:flex-row gap-gutter justify-between items-end mb-lg">
+        <section className="px-margin-mobile md:px-margin-desktop py-s-lg bg-surface">
+          <div className="flex flex-col md:flex-row gap-gutter justify-between items-end mb-s-lg">
             <h2 className="font-headline text-headline-lg text-primary">Hall Availability</h2>
             <Link to="/hall" className="font-ui-button text-ui-button text-primary flex items-center gap-2 hover:underline">
               View full calendar <Icon name="arrow_forward" />
@@ -148,9 +148,9 @@ function Home() {
         </section>
 
         {/* Gatherings */}
-        <section id="gatherings" className="bg-secondary-container py-xl">
+        <section id="gatherings" className="bg-secondary-container py-s-xl">
           <div className="px-margin-mobile md:px-margin-desktop">
-            <div className="mb-lg">
+            <div className="mb-s-lg">
               <h2 className="font-display text-display-lg-mobile md:text-display-lg text-on-secondary-fixed mb-2">
                 Upcoming Gatherings
               </h2>
@@ -183,8 +183,8 @@ function Home() {
         </section>
 
         {/* Notice board */}
-        <section id="notices" className="px-margin-mobile md:px-margin-desktop py-xl">
-          <h2 className="font-headline text-headline-lg mb-lg text-primary flex items-center gap-4">
+        <section id="notices" className="px-margin-mobile md:px-margin-desktop py-s-xl">
+          <h2 className="font-headline text-headline-lg mb-s-lg text-primary flex items-center gap-4">
             <Icon name="campaign" className="text-4xl" /> Notice Board
           </h2>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-margin-desktop">
@@ -234,8 +234,8 @@ function Home() {
         </section>
 
         {/* Gallery */}
-        <section id="gallery" className="bg-surface-container-low py-xl overflow-hidden">
-          <div className="px-margin-mobile md:px-margin-desktop mb-lg text-center">
+        <section id="gallery" className="bg-surface-container-low py-s-xl overflow-hidden">
+          <div className="px-margin-mobile md:px-margin-desktop mb-s-lg text-center">
             <h2 className="font-display text-display-lg-mobile md:text-display-lg text-primary">Community Moments</h2>
             <p className="font-body text-body-lg text-on-surface-variant">Captured during our recent festivals and workshops.</p>
           </div>
@@ -251,7 +251,7 @@ function Home() {
         </section>
 
         {/* Emergency contacts */}
-        <section id="contacts" className="px-margin-mobile md:px-margin-desktop py-xl border-y-2 border-primary">
+        <section id="contacts" className="px-margin-mobile md:px-margin-desktop py-s-xl border-y-2 border-primary">
           <div className="flex flex-col lg:flex-row gap-margin-desktop items-start">
             <div className="lg:w-1/3">
               <h2 className="font-headline text-headline-lg text-primary mb-4">Emergency Contacts</h2>

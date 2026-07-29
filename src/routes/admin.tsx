@@ -39,7 +39,7 @@ function AdminPage() {
     return (
       <div className="bg-background text-on-surface min-h-screen">
         <SiteHeader active="gatherings" />
-        <main className="pt-32 pb-xl px-margin-mobile md:px-margin-desktop max-w-md mx-auto space-y-4">
+        <main className="pt-32 pb-s-xl px-margin-mobile md:px-margin-desktop max-w-md mx-auto space-y-4">
           <h1 className="font-headline text-headline-lg text-primary">Admin Sign In</h1>
           <input type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full p-4 border-2 border-primary bg-surface" />
           <input type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full p-4 border-2 border-primary bg-surface" />
@@ -75,12 +75,12 @@ function AdminPage() {
   return (
     <div className="bg-background text-on-surface min-h-screen">
       <SiteHeader active="gatherings" />
-      <main className="pt-32 pb-xl px-margin-mobile md:px-margin-desktop max-w-7xl mx-auto">
-        <div className="flex justify-between items-center mb-lg">
+      <main className="pt-32 pb-s-xl px-margin-mobile md:px-margin-desktop max-w-7xl mx-auto">
+        <div className="flex justify-between items-center mb-s-lg">
           <h1 className="font-headline text-headline-lg text-primary">Admin: Hall Booking</h1>
           <button onClick={() => signOut(auth)} className="px-4 py-2 border-2 border-primary font-ui-button">Sign Out</button>
         </div>
-        <div role="tablist" className="flex flex-wrap gap-2 mb-lg border-b-2 border-primary">
+        <div role="tablist" className="flex flex-wrap gap-2 mb-s-lg border-b-2 border-primary">
           {TABS.map((t) => (
             <button
               key={t.id}
