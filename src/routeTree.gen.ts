@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
 import { Route as HallRouteImport } from './routes/hall'
+import { Route as AdminRouteImport } from './routes/admin'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as HallStatusRouteImport } from './routes/hall.status'
 
@@ -22,6 +23,11 @@ const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
 const HallRoute = HallRouteImport.update({
   id: '/hall',
   path: '/hall',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminRoute = AdminRouteImport.update({
+  id: '/admin',
+  path: '/admin',
   getParentRoute: () => rootRouteImport,
 } as any)
 const IndexRoute = IndexRouteImport.update({
@@ -37,12 +43,14 @@ const HallStatusRoute = HallStatusRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/admin': typeof AdminRoute
   '/hall': typeof HallRouteWithChildren
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/hall/status': typeof HallStatusRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/admin': typeof AdminRoute
   '/hall': typeof HallRouteWithChildren
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/hall/status': typeof HallStatusRoute
@@ -50,20 +58,22 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/admin': typeof AdminRoute
   '/hall': typeof HallRouteWithChildren
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/hall/status': typeof HallStatusRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/hall' | '/sitemap.xml' | '/hall/status'
+  fullPaths: '/' | '/admin' | '/hall' | '/sitemap.xml' | '/hall/status'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/hall' | '/sitemap.xml' | '/hall/status'
-  id: '__root__' | '/' | '/hall' | '/sitemap.xml' | '/hall/status'
+  to: '/' | '/admin' | '/hall' | '/sitemap.xml' | '/hall/status'
+  id: '__root__' | '/' | '/admin' | '/hall' | '/sitemap.xml' | '/hall/status'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AdminRoute: typeof AdminRoute
   HallRoute: typeof HallRouteWithChildren
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
 }
@@ -82,6 +92,13 @@ declare module '@tanstack/react-router' {
       path: '/hall'
       fullPath: '/hall'
       preLoaderRoute: typeof HallRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin': {
+      id: '/admin'
+      path: '/admin'
+      fullPath: '/admin'
+      preLoaderRoute: typeof AdminRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/': {
@@ -113,6 +130,7 @@ const HallRouteWithChildren = HallRoute._addFileChildren(HallRouteChildren)
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AdminRoute: AdminRoute,
   HallRoute: HallRouteWithChildren,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
 }
