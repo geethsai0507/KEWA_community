@@ -1,8 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { onAuthStateChanged, signInWithEmailAndPassword, signOut, type User } from "firebase/auth";
-import { auth } from "@/lib/hall/firebase";
+import { collection, getDocs, query, where } from "firebase/firestore";
+import { auth, db } from "@/lib/hall/firebase";
+import { approveBooking, rejectApproval, verifyPayment, rejectPayment } from "@/lib/hall/transactions";
 import { SiteHeader, SiteFooter } from "@/components/site-chrome";
+import type { BookingDoc } from "@/lib/hall/types";
 
 export const Route = createFileRoute("/admin")({
   component: AdminPage,
@@ -95,8 +98,74 @@ function AdminPage() {
   );
 }
 
-function PendingApprovalTab() { return <p>Loading…</p>; }
-function PendingVerificationTab() { return <p>Loading…</p>; }
+function useBookingsByStatus(status: string) {
+  const [bookings, setBookings] = useState<(BookingDoc & { bookingId: string })[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const reload = async () => {
+    setLoading(true);
+    const q = query(collection(db, "bookings"), where("status", "==", status));
+    const snap = await getDocs(q);
+    setBookings(snap.docs.map((d) => ({ ...(d.data() as BookingDoc), bookingId: d.id })));
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    void reload();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status]);
+
+  return { bookings, loading, reload };
+}
+
+function PendingApprovalTab() {
+  const { bookings, loading, reload } = useBookingsByStatus("pending-approval");
+
+  if (loading) return <p>Loading…</p>;
+  if (bookings.length === 0) return <p className="opacity-60">Nothing pending approval.</p>;
+
+  return (
+    <div className="space-y-4">
+      {bookings.map((b) => (
+        <div key={b.bookingId} className="brutalist-card p-4 bg-surface flex justify-between items-center">
+          <div>
+            <p className="font-bold">{b.venue} — {b.date} ({b.slot})</p>
+            <p className="text-sm opacity-70">{b.name} · {b.empId} · {b.phone}</p>
+          </div>
+          <div className="flex gap-2">
+            <button onClick={async () => { await approveBooking(b.bookingId); await reload(); }} className="px-4 py-2 bg-primary text-on-primary font-ui-button text-sm">Approve</button>
+            <button onClick={async () => { await rejectApproval(b.bookingId); await reload(); }} className="px-4 py-2 border-2 border-primary text-primary font-ui-button text-sm">Reject</button>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function PendingVerificationTab() {
+  const { bookings, loading, reload } = useBookingsByStatus("pending-verification");
+
+  if (loading) return <p>Loading…</p>;
+  if (bookings.length === 0) return <p className="opacity-60">Nothing awaiting payment verification.</p>;
+
+  return (
+    <div className="space-y-4">
+      {bookings.map((b) => (
+        <div key={b.bookingId} className="brutalist-card p-4 bg-surface flex justify-between items-center">
+          <div>
+            <p className="font-bold">{b.venue} — {b.date} ({b.slot})</p>
+            <p className="text-sm opacity-70">{b.name} · ₹{b.amount} · UTR: {b.utr}</p>
+          </div>
+          <div className="flex gap-2">
+            <button onClick={async () => { await verifyPayment(b.bookingId); await reload(); }} className="px-4 py-2 bg-primary text-on-primary font-ui-button text-sm">Verify</button>
+            <button onClick={async () => { await rejectPayment(b.bookingId); await reload(); }} className="px-4 py-2 border-2 border-primary text-primary font-ui-button text-sm">Reject</button>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function AllBookingsTab() { return <p>Loading…</p>; }
 function BlockedDatesTab() { return <p>Loading…</p>; }
 function MembersTab() { return <p>Loading…</p>; }
