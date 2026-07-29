@@ -1,11 +1,14 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { onAuthStateChanged, signInWithEmailAndPassword, signOut, type User } from "firebase/auth";
-import { collection, getDocs, query, where } from "firebase/firestore";
+import { addDoc, collection, deleteDoc, doc, getDoc, getDocs, query, serverTimestamp, updateDoc, where } from "firebase/firestore";
 import { auth, db } from "@/lib/hall/firebase";
-import { approveBooking, rejectApproval, verifyPayment, rejectPayment } from "@/lib/hall/transactions";
+import { approveBooking, rejectApproval, verifyPayment, rejectPayment, cancelBookingAdmin, expireStaleBooking } from "@/lib/hall/transactions";
+import { isExpiredPendingPayment } from "@/lib/hall/conflict";
+import { slotDocId } from "@/lib/hall/slotKey";
+import { VENUES } from "@/lib/hall/constants";
 import { SiteHeader, SiteFooter } from "@/components/site-chrome";
-import type { BookingDoc } from "@/lib/hall/types";
+import type { BookingDoc, BlockedDateDoc } from "@/lib/hall/types";
 
 export const Route = createFileRoute("/admin")({
   component: AdminPage,
@@ -166,7 +169,135 @@ function PendingVerificationTab() {
   );
 }
 
-function AllBookingsTab() { return <p>Loading…</p>; }
-function BlockedDatesTab() { return <p>Loading…</p>; }
+function AllBookingsTab() {
+  const [bookings, setBookings] = useState<(BookingDoc & { bookingId: string })[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState<string>("all");
+
+  const reload = async () => {
+    setLoading(true);
+    const snap = await getDocs(collection(db, "bookings"));
+    const loaded = snap.docs.map((d) => ({ ...(d.data() as BookingDoc), bookingId: d.id }));
+
+    // Two admin-side sweeps, both syncing bookingSlots from state the admin panel already has
+    // authenticated access to.
+    const now = Date.now();
+    for (const b of loaded) {
+      if (isExpiredPendingPayment(b.status, b.expiresAt, now)) {
+        // Stale-payment expiry: the calendar deliberately no longer triggers this write itself
+        // (see Task 12), since doing so would have required bookingSlots to carry a bookingId
+        // pointer, which is a PII-leak risk once that collection is publicly listable. Safe to
+        // blindly retry — expireStaleBooking re-checks the booking's live status, and once
+        // expired it can never match this branch's condition again.
+        void expireStaleBooking(b.bookingId);
+        b.status = "expired"; // optimistic local update so the UI doesn't wait for the write
+      } else if (b.status === "cancelled") {
+        // Self-cancel sync: cancelBookingSelf (Task 10) can't write bookingSlots itself, since
+        // it's called anonymously and bookingSlots' deterministic ID is public/guessable — a
+        // rule permitting that write for anyone would let a stranger free or tamper with a
+        // slot they have no connection to. The admin write below is authorized via isAdmin(),
+        // no new rule needed. Unlike expiry, "cancelled" matches forever on every reload, so
+        // this must verify occupiedSince still matches THIS booking before writing, or a
+        // stale sweep could stomp a different, newer booking that has since claimed the slot.
+        const slotRef = doc(db, "bookingSlots", slotDocId(b.venue, b.date, b.slot));
+        void getDoc(slotRef).then((slotSnap) => {
+          if (slotSnap.exists() && slotSnap.data().occupiedSince?.isEqual(b.occupiedSince)) {
+            void updateDoc(slotRef, { status: "cancelled" }).catch(() => {});
+          }
+        });
+      }
+    }
+
+    setBookings(loaded);
+    setLoading(false);
+  };
+
+  useEffect(() => { void reload(); }, []);
+
+  if (loading) return <p>Loading…</p>;
+
+  const filtered = filter === "all" ? bookings : bookings.filter((b) => b.status === filter);
+
+  return (
+    <div className="space-y-4">
+      <select value={filter} onChange={(e) => setFilter(e.target.value)} className="p-2 border-2 border-primary bg-surface">
+        <option value="all">All statuses</option>
+        <option value="pending-approval">Pending Approval</option>
+        <option value="pending-payment">Pending Payment</option>
+        <option value="pending-verification">Pending Verification</option>
+        <option value="confirmed">Confirmed</option>
+        <option value="cancelled">Cancelled</option>
+        <option value="expired">Expired</option>
+      </select>
+      {filtered.map((b) => (
+        <div key={b.bookingId} className="brutalist-card p-4 bg-surface flex justify-between items-center">
+          <div>
+            <p className="font-bold">{b.venue} — {b.date} ({b.slot}) — {b.status}</p>
+            <p className="text-sm opacity-70">{b.name} · {b.empId} · {b.phone}</p>
+          </div>
+          {b.status !== "cancelled" && b.status !== "expired" && (
+            <button
+              onClick={async () => { await cancelBookingAdmin(b.bookingId); await reload(); }}
+              className="px-4 py-2 border-2 border-primary text-primary font-ui-button text-sm"
+            >
+              Force Cancel
+            </button>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function BlockedDatesTab() {
+  const [blocked, setBlocked] = useState<(BlockedDateDoc & { docId: string })[]>([]);
+  const [date, setDate] = useState("");
+  const [venue, setVenue] = useState("all");
+  const [reason, setReason] = useState("");
+
+  const reload = async () => {
+    const snap = await getDocs(collection(db, "blockedDates"));
+    setBlocked(snap.docs.map((d) => ({ ...(d.data() as BlockedDateDoc), docId: d.id })));
+  };
+
+  useEffect(() => { void reload(); }, []);
+
+  return (
+    <div className="space-y-6">
+      <div className="brutalist-card p-4 bg-surface space-y-2">
+        <div className="grid grid-cols-3 gap-2">
+          <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="p-2 border-2 border-primary bg-surface" />
+          <select value={venue} onChange={(e) => setVenue(e.target.value)} className="p-2 border-2 border-primary bg-surface">
+            <option value="all">All Venues</option>
+            {VENUES.map((v) => <option key={v.name} value={v.name}>{v.name}</option>)}
+          </select>
+          <input type="text" placeholder="Reason" value={reason} onChange={(e) => setReason(e.target.value)} className="p-2 border-2 border-primary bg-surface" />
+        </div>
+        <button
+          onClick={async () => {
+            if (!date || !reason.trim()) return;
+            await addDoc(collection(db, "blockedDates"), { date, venue, reason: reason.trim(), createdAt: serverTimestamp() });
+            setDate(""); setReason("");
+            await reload();
+          }}
+          className="px-4 py-2 bg-primary text-on-primary font-ui-button text-sm"
+        >
+          Block Date
+        </button>
+      </div>
+      {blocked.map((b) => (
+        <div key={b.docId} className="flex justify-between items-center p-2 border-b-2 border-primary/10">
+          <span>{b.date} — {b.venue === "all" ? "All Venues" : b.venue} — {b.reason}</span>
+          <button
+            onClick={async () => { await deleteDoc(doc(db, "blockedDates", b.docId)); await reload(); }}
+            className="px-3 py-1 border-2 border-primary text-primary text-sm"
+          >
+            Unblock
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+}
 function MembersTab() { return <p>Loading…</p>; }
 function EmailSettingsTab() { return <p>Loading…</p>; }
