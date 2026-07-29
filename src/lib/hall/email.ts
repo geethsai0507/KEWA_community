@@ -4,10 +4,10 @@ import type { BookingDoc } from "./types";
 const SERVICE_ID = import.meta.env.VITE_EMAILJS_SERVICE_ID as string;
 const PUBLIC_KEY = import.meta.env.VITE_EMAILJS_PUBLIC_KEY as string;
 
-const TEMPLATE_APPROVAL_NEEDED = "template_approval_needed";
-const TEMPLATE_PAYMENT_INSTRUCTIONS = "template_payment_instructions";
-const TEMPLATE_CONFIRMED = "template_confirmed";
-const TEMPLATE_CANCELLED = "template_cancelled";
+const TEMPLATE_APPROVAL_NEEDED = "tpl_approval_needed";
+const TEMPLATE_PAYMENT_INSTRUCTIONS = "tpl_payment_instr";
+const TEMPLATE_CONFIRMED = "tpl_confirmed";
+const TEMPLATE_CANCELLED = "tpl_cancelled";
 const ADMIN_EMAIL = import.meta.env.VITE_ADMIN_EMAIL as string;
 
 async function safeSend(templateId: string, params: Record<string, unknown>): Promise<void> {
