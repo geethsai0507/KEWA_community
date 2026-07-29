@@ -1,4 +1,4 @@
-# KEWA Community Portal
+# Executives Club Community Portal
 
 A web app built with TanStack Start, React, TypeScript, and Tailwind CSS.
 

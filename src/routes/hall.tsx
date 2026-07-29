@@ -11,17 +11,17 @@ import { createBooking, submitUtr } from "@/lib/hall/transactions";
 export const Route = createFileRoute("/hall")({
   head: () => ({
     meta: [
-      { title: "Hall Booking & Calendar — KEWA Community" },
+      { title: "Hall Booking & Calendar — Executives Club Community" },
       {
         name: "description",
         content:
-          "Check hall availability, book the KEWA community hall in four quick steps, and review rates and rules.",
+          "Check hall availability, book the Executives Club community hall in four quick steps, and review rates and rules.",
       },
-      { property: "og:title", content: "Hall Booking & Calendar — KEWA Community" },
+      { property: "og:title", content: "Hall Booking & Calendar — Executives Club Community" },
       {
         property: "og:description",
         content:
-          "Reserve the KEWA community hall, review your bookings and see the house rules.",
+          "Reserve the Executives Club community hall, review your bookings and see the house rules.",
       },
     ],
   }),
