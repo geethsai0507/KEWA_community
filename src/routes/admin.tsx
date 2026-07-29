@@ -7,6 +7,8 @@ import { approveBooking, rejectApproval, verifyPayment, rejectPayment, cancelBoo
 import { isExpiredPendingPayment } from "@/lib/hall/conflict";
 import { slotDocId } from "@/lib/hall/slotKey";
 import { VENUES } from "@/lib/hall/constants";
+import * as XLSX from "xlsx";
+import { uploadMembers } from "@/lib/hall/members";
 import { SiteHeader, SiteFooter } from "@/components/site-chrome";
 import type { BookingDoc, BlockedDateDoc } from "@/lib/hall/types";
 
@@ -299,5 +301,44 @@ function BlockedDatesTab() {
     </div>
   );
 }
-function MembersTab() { return <p>Loading…</p>; }
-function EmailSettingsTab() { return <p>Loading…</p>; }
+function MembersTab() {
+  const [status, setStatus] = useState("");
+
+  const handleFile = async (file: File) => {
+    setStatus("Parsing…");
+    const buffer = await file.arrayBuffer();
+    const workbook = XLSX.read(buffer, { type: "array" });
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json<{ empId: string; name: string; phone: string }>(sheet);
+    setStatus(`Uploading ${rows.length} members…`);
+    await uploadMembers(rows);
+    setStatus(`Uploaded ${rows.length} members.`);
+  };
+
+  return (
+    <div className="space-y-4">
+      <p className="text-sm opacity-70">Upload an Excel file with columns: empId, name, phone.</p>
+      <input
+        type="file"
+        accept=".xlsx,.xls"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) void handleFile(file);
+        }}
+      />
+      {status && <p>{status}</p>}
+    </div>
+  );
+}
+
+function EmailSettingsTab() {
+  return (
+    <div className="space-y-2 max-w-lg">
+      <p className="text-sm opacity-70">
+        EmailJS service ID, template IDs, public key, and the admin notification address are configured via
+        environment variables (see <code>.env.example</code>) rather than an in-app form, since they're
+        build-time configuration for this static deployment, not per-tenant runtime settings.
+      </p>
+    </div>
+  );
+}
