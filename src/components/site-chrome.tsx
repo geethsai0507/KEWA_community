@@ -81,7 +81,7 @@ export function SiteFooter() {
         </div>
       </div>
       <div className="border-t border-on-primary/20 pt-s-lg relative z-10">
-        <p className="font-body text-body-md opacity-60">© 2024 Executives Club Residential Colony. All rights reserved.</p>
+        <p className="font-body text-body-md opacity-60">© 2026 Executives Club Kudigi, NTPC Karnataka. All rights reserved.</p>
       </div>
       <div className="absolute -bottom-12 md:-bottom-24 -right-12 pointer-events-none select-none opacity-20">
         <span className="font-display text-[120px] md:text-[280px] font-extrabold tracking-tighter leading-none">Executives Club</span>
