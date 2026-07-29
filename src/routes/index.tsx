@@ -1,5 +1,8 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
 import { Icon, SiteHeader, SiteFooter } from "@/components/site-chrome";
+import { VENUES } from "@/lib/hall/constants";
+import { subscribeToCalendar, type DayStatus } from "@/lib/hall/calendar";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -70,6 +73,72 @@ const contacts = [
   { title: "Electrician / Lift", sub: "Emergency Maintenance", icon: "bolt", hover: "hover:bg-on-surface hover:text-white" },
 ];
 
+function toDateStr(d: Date) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function summarizeDay(day: { Morning: DayStatus; Evening: DayStatus } | undefined) {
+  const morning = day?.Morning ?? "available";
+  const evening = day?.Evening ?? "available";
+  if (morning === "available" && evening === "available") {
+    return { dot: "bg-[#1E4D12]", text: "Available all day" };
+  }
+  if (morning !== "available" && evening !== "available") {
+    return { dot: "bg-error", text: morning === "blocked" || evening === "blocked" ? "Blocked" : "Fully booked" };
+  }
+  const freeSlot = morning === "available" ? "Morning" : "Evening";
+  return { dot: "bg-secondary-container", text: `Partially available (${freeSlot} free)` };
+}
+
+function HallAvailabilityWidget() {
+  const venue = VENUES[0].name;
+  const [byDate, setByDate] = useState<Record<string, { Morning: DayStatus; Evening: DayStatus }>>({});
+
+  const today = new Date();
+  const tomorrow = new Date(today);
+  tomorrow.setDate(today.getDate() + 1);
+  const dayAfter = new Date(today);
+  dayAfter.setDate(today.getDate() + 2);
+  const targets = [today, tomorrow, dayAfter];
+
+  useEffect(() => {
+    // Subscribe to every distinct (year, month) the 3 target days span, so this still works
+    // correctly across a month boundary (e.g. today is the last day of the month).
+    const months = new Set(targets.map((d) => `${d.getFullYear()}-${d.getMonth()}`));
+    const unsubscribes = Array.from(months).map((key) => {
+      const [year, month] = key.split("-").map(Number);
+      return subscribeToCalendar(venue, year, month, (monthData) => {
+        setByDate((prev) => ({ ...prev, ...monthData }));
+      });
+    });
+    return () => unsubscribes.forEach((u) => u());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [venue, toDateStr(today)]);
+
+  const labels = ["Today", "Tomorrow", targets[2].toLocaleDateString("en-IN", { weekday: "long" })];
+
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-gutter">
+      {targets.map((d, i) => {
+        const dateStr = toDateStr(d);
+        const { dot, text } = summarizeDay(byDate[dateStr]);
+        return (
+          <div key={dateStr} className="brutalist-card p-6 bg-white flex flex-col gap-4">
+            <div className="flex justify-between items-start">
+              <span className="font-label-md text-label-md text-on-surface-variant uppercase">{labels[i]}</span>
+              <span className={`w-3 h-3 rounded-full ${dot}`}></span>
+            </div>
+            <div className="font-headline text-headline-md">
+              {d.toLocaleDateString("en-IN", { month: "short", day: "numeric" })}
+            </div>
+            <p className="font-body text-body-md text-on-surface-variant">{text}</p>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function Home() {
   return (
     <div className="bg-background text-on-background">
@@ -119,32 +188,7 @@ function Home() {
               View full calendar <Icon name="arrow_forward" />
             </Link>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-gutter">
-            <div className="brutalist-card p-6 bg-white flex flex-col gap-4">
-              <div className="flex justify-between items-start">
-                <span className="font-label-md text-label-md text-on-surface-variant uppercase">Today</span>
-                <span className="w-3 h-3 rounded-full bg-[#1E4D12]"></span>
-              </div>
-              <div className="font-headline text-headline-md">Oct 24</div>
-              <p className="font-body text-body-md text-on-surface-variant">Available for short bookings (under 2 hours)</p>
-            </div>
-            <div className="brutalist-card p-6 bg-white flex flex-col gap-4">
-              <div className="flex justify-between items-start">
-                <span className="font-label-md text-label-md text-on-surface-variant uppercase">Tomorrow</span>
-                <span className="w-3 h-3 rounded-full bg-error"></span>
-              </div>
-              <div className="font-headline text-headline-md">Oct 25</div>
-              <p className="font-body text-body-md text-on-surface-variant">Fully booked: Annual General Meeting</p>
-            </div>
-            <div className="brutalist-card p-6 bg-white flex flex-col gap-4">
-              <div className="flex justify-between items-start">
-                <span className="font-label-md text-label-md text-on-surface-variant uppercase">Oct 26</span>
-                <span className="w-3 h-3 rounded-full bg-[#1E4D12]"></span>
-              </div>
-              <div className="font-headline text-headline-md">Saturday</div>
-              <p className="font-body text-body-md text-on-surface-variant">Free all day. Perfect for family events.</p>
-            </div>
-          </div>
+          <HallAvailabilityWidget />
         </section>
 
         {/* Gatherings */}
