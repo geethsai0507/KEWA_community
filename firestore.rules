@@ -105,9 +105,14 @@ service cloud.firestore {
     match /bookingLookup/{lookupToken} {
       allow get: if true;
       allow list: if isAdmin();
+      // existsAfter(), not exists(): createBooking writes bookings/{bookingId} and this
+      // bookingLookup doc in the SAME atomic transaction, so the bookings doc doesn't exist
+      // yet in already-committed state when this rule runs — exists() would always see it as
+      // absent and reject every legitimate create. existsAfter() checks state as it will be
+      // once the whole transaction commits, which does include the sibling write.
       allow create: if request.resource.data.keys().hasOnly(['bookingId'])
         && request.resource.data.bookingId is string
-        && exists(/databases/$(database)/documents/bookings/$(request.resource.data.bookingId));
+        && existsAfter(/databases/$(database)/documents/bookings/$(request.resource.data.bookingId));
       allow update, delete: if isAdmin();
     }
 
