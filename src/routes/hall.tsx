@@ -387,6 +387,7 @@ function BookingPanel() {
                     setBookingResult(result);
                     setStep(3);
                   } catch (err) {
+                    console.error("createBooking failed:", err);
                     setSubmitError(
                       err instanceof Error && err.message === "SLOT_TAKEN"
                         ? "This slot was just taken, please choose another."
