@@ -71,10 +71,13 @@ service cloud.firestore {
       allow create: if isCreateFieldsValid()
         && request.resource.data.bookingNumber is string
         && request.resource.data.lookupToken is string
-        && !('cancelledBy' in request.resource.data)
-        && !('approvedBy' in request.resource.data)
-        && !('paymentVerifiedBy' in request.resource.data)
-        && !('rejectedBy' in request.resource.data);
+        // createBooking writes these as explicit nulls (for a consistent doc schema), not
+        // absent keys — so "not present" alone would reject every legitimate create. Admin
+        // attribution is still blocked: only null is allowed, any real value is rejected.
+        && (!('cancelledBy' in request.resource.data) || request.resource.data.cancelledBy == null)
+        && (!('approvedBy' in request.resource.data) || request.resource.data.approvedBy == null)
+        && (!('paymentVerifiedBy' in request.resource.data) || request.resource.data.paymentVerifiedBy == null)
+        && (!('rejectedBy' in request.resource.data) || request.resource.data.rejectedBy == null);
       allow update: if isAdmin()
         || (
           resource.data.status in ['confirmed', 'pending-payment']
