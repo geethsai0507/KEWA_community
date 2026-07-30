@@ -9,6 +9,7 @@ import {
 } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 
+import { SiteGate } from "@/components/site-gate";
 import appCss from "../styles.css?url";
 
 function NotFoundComponent() {
@@ -127,7 +128,9 @@ function RootComponent() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <Outlet />
+      <SiteGate>
+        <Outlet />
+      </SiteGate>
     </QueryClientProvider>
   );
 }
