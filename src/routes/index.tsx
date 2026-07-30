@@ -239,11 +239,11 @@ function Home() {
               <div className="flex flex-col gap-4">
                 <div className="p-6 border-l-8 border-tertiary bg-white brutalist-card shadow-sm">
                   <div className="flex justify-between items-start mb-2">
-                    <h4 className="font-headline text-headline-md">Water Tank Maintenance</h4>
+                    <h4 className="font-headline text-headline-md">Club Maintenance</h4>
                     <span className="font-label-md text-label-md text-tertiary">URGENT</span>
                   </div>
                   <p className="font-body text-body-md text-on-surface-variant mb-4">
-                    Water supply will be suspended this Saturday from 10:00 AM to 02:00 PM for cleaning.
+                    Club facilities will be under maintenance this Saturday from 10:00 AM to 02:00 PM for cleaning.
                   </p>
                   <span className="font-label-md text-label-md text-outline">Posted 2 hours ago</span>
                 </div>
