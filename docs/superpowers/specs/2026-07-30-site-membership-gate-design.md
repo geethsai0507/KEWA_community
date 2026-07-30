@@ -18,10 +18,31 @@ Today, the "are you a member?" check happens as Step 1 inside the `/hall` bookin
 
 ## Implementation
 
-- New component (e.g. `src/components/site-gate.tsx`) rendered from `RootComponent` in `src/routes/__root.tsx`, wrapping `<Outlet />`.
-- On mount, reads `sessionStorage.hall_gate_verified`. If set, renders `<Outlet />` directly.
-- If not set, checks current pathname (via router state/location): if it starts with `/admin`, renders `<Outlet />` directly (bypass). Otherwise renders the full-screen splash in place of `<Outlet />`.
-- On successful verify, sets `sessionStorage.hall_gate_verified = "1"` and renders `<Outlet />`.
+- New component `src/components/site-gate.tsx`, used in `RootComponent` (`src/routes/__root.tsx`) as a wrapper around `<Outlet />`:
+  ```tsx
+  <SiteGate>
+    <Outlet />
+  </SiteGate>
+  ```
+  Internally: `if (bypassAdmin || verified) return children; return <MembershipSplash onVerified={...} />;`
+- **Admin bypass:** `location.pathname.startsWith("/admin")` — covers `/admin`, `/admin/login`, `/admin/dashboard`, etc. with no extra work.
+- **No flash on refresh:** initialize the `verified` state synchronously from `sessionStorage` during `useState` init (not in a `useEffect`), guarded for SSR:
+  ```tsx
+  const [verified, setVerified] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return sessionStorage.getItem("hall_gate_verified") === "1";
+  });
+  ```
+- **Input handling:** trim the Employee ID (`const empId = input.trim()`) before calling `verifyMembership`.
+- **Duplicate-submit guard:** while a verify request is in flight, disable the Verify button and the input, and show "Verifying…" on the button.
+- **Error mapping** (kept distinct, not collapsed):
+  | Situation | Message |
+  |---|---|
+  | Empty input | "Enter your Employee ID." |
+  | `verifyMembership()` resolves `false` | "No member found with this Employee ID — check for typos and try again." |
+  | `verifyMembership()` throws | "Something went wrong, try again." |
+- **Accessibility:** autofocus the Employee ID input on mount; Enter key submits; refocus the input after a failed verification; error message container uses `aria-live="polite"`.
+- On successful verify: `sessionStorage.setItem("hall_gate_verified", "1")` and set `verified` state to `true`. Only the boolean flag is stored — not the Employee ID itself.
 - No new Firestore reads/writes beyond the existing `verifyMembership` call; no changes to `firestore.rules`.
 
 ## Out of scope
