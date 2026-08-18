@@ -31,7 +31,7 @@ const gatherings = [
   {
     tag: "Wellness",
     tagBg: "bg-primary text-on-primary",
-    title: "Sunday Yoga",
+    title: "Yoga",
     time: "07:00 AM",
     place: "Terrace Garden",
     cta: "Register",
@@ -40,7 +40,7 @@ const gatherings = [
   {
     tag: "Governance",
     tagBg: "bg-tertiary text-on-tertiary",
-    title: "Residents Meeting",
+    title: "Meeting",
     time: "06:30 PM",
     place: "Community Hall",
     cta: "View Agenda",
@@ -261,7 +261,6 @@ function Home() {
               <div className="divide-y-2 divide-surface-container-highest">
                 {[
                   { t: "Elevator B Service Schedule", d: "Monthly preventative maintenance for Elevator B is scheduled for tomorrow between 2 PM and 4 PM. Please use Elevator A during this period." },
-                  { t: "Rainwater Harvesting Update", d: "We've successfully updated the filter systems in the central pit. This will improve collection efficiency by 15%." },
                   { t: "Pet Park Guidelines", d: "Please ensure all pets are leashed when entering or exiting the community gates." },
                 ].map((n) => (
                   <details key={n.t} className="group py-4 cursor-pointer">
