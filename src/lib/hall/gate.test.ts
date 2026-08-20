@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { GATE_SESSION_KEY, isAdminPath, readGateSession, gateErrorMessage } from "./gate";
+import { GATE_SESSION_KEY, GATE_EMP_ID_KEY, isAdminPath, readGateSession, readGateEmpId, gateErrorMessage } from "./gate";
 
 describe("isAdminPath", () => {
   it("matches the bare /admin path", () => {
@@ -28,6 +28,15 @@ describe("readGateSession", () => {
   });
   it("returns false when the session flag has an unexpected value", () => {
     expect(readGateSession(() => "true")).toBe(false);
+  });
+});
+
+describe("readGateEmpId", () => {
+  it("returns the stored employee id when present", () => {
+    expect(readGateEmpId((key) => (key === GATE_EMP_ID_KEY ? "EMP1234" : null))).toBe("EMP1234");
+  });
+  it("returns null when nothing is stored", () => {
+    expect(readGateEmpId(() => null)).toBe(null);
   });
 });
 
