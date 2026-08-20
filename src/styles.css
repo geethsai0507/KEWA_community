@@ -5,17 +5,17 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme {
-  --font-display: "Bricolage Grotesque", sans-serif;
-  --font-headline: "Bricolage Grotesque", sans-serif;
-  --font-ui-button: "Bricolage Grotesque", sans-serif;
+  --font-display: "Playfair Display", serif;
+  --font-headline: "Playfair Display", serif;
+  --font-ui-button: "Inter", sans-serif;
   --font-body: "Inter", sans-serif;
   --font-body-md: "Inter", sans-serif;
   --font-body-lg: "Inter", sans-serif;
   --font-label-md: "Inter", sans-serif;
-  --font-display-lg: "Bricolage Grotesque", sans-serif;
-  --font-display-lg-mobile: "Bricolage Grotesque", sans-serif;
-  --font-headline-md: "Bricolage Grotesque", sans-serif;
-  --font-headline-lg: "Bricolage Grotesque", sans-serif;
+  --font-display-lg: "Playfair Display", serif;
+  --font-display-lg-mobile: "Playfair Display", serif;
+  --font-headline-md: "Playfair Display", serif;
+  --font-headline-lg: "Playfair Display", serif;
 
   --text-display-lg: 64px;
   --text-display-lg--line-height: 1.1;
@@ -66,74 +66,74 @@
 
   --radius: 0;
 
-  --color-background: #fdf7ff;
-  --color-on-background: #1c1a24;
-  --color-surface: #fdf7ff;
-  --color-surface-bright: #fdf7ff;
-  --color-surface-dim: #ded8e5;
-  --color-surface-variant: #e6e0ee;
-  --color-surface-tint: #6539e3;
-  --color-surface-container: #f2ebf9;
-  --color-surface-container-low: #f7f1ff;
-  --color-surface-container-lowest: #ffffff;
-  --color-surface-container-high: #ece6f4;
-  --color-surface-container-highest: #e6e0ee;
-  --color-on-surface: #1c1a24;
-  --color-on-surface-variant: #484455;
-  --color-inverse-surface: #322f39;
-  --color-inverse-on-surface: #f5eefc;
+  --color-background: #14110c;
+  --color-on-background: #f3ead8;
+  --color-surface: #14110c;
+  --color-surface-bright: #241f16;
+  --color-surface-dim: #0c0a07;
+  --color-surface-variant: #2a2318;
+  --color-surface-tint: #c9a24b;
+  --color-surface-container: #1c1810;
+  --color-surface-container-low: #18140d;
+  --color-surface-container-lowest: #0c0a07;
+  --color-surface-container-high: #241f16;
+  --color-surface-container-highest: #2a2318;
+  --color-on-surface: #f3ead8;
+  --color-on-surface-variant: #c9bba0;
+  --color-inverse-surface: #f3ead8;
+  --color-inverse-on-surface: #1c1810;
 
-  --color-primary: #4300ba;
-  --color-on-primary: #ffffff;
-  --color-primary-container: #5b2bd9;
-  --color-on-primary-container: #cfc1ff;
-  --color-primary-fixed: #e7deff;
-  --color-primary-fixed-dim: #ccbeff;
-  --color-on-primary-fixed: #1f0060;
-  --color-on-primary-fixed-variant: #4d0fcb;
-  --color-inverse-primary: #ccbeff;
+  --color-primary: #c9a24b;
+  --color-on-primary: #1a1508;
+  --color-primary-container: #e5c158;
+  --color-on-primary-container: #2a1e00;
+  --color-primary-fixed: #e5c158;
+  --color-primary-fixed-dim: #c9a24b;
+  --color-on-primary-fixed: #2a1e00;
+  --color-on-primary-fixed-variant: #4a3a10;
+  --color-inverse-primary: #e5c158;
 
-  --color-secondary: #815600;
+  --color-secondary: #1f6b4a;
   --color-on-secondary: #ffffff;
-  --color-secondary-container: #fdaf1e;
-  --color-on-secondary-container: #6a4600;
-  --color-secondary-fixed: #ffddb1;
-  --color-secondary-fixed-dim: #ffba4b;
-  --color-on-secondary-fixed: #291800;
-  --color-on-secondary-fixed-variant: #624000;
+  --color-secondary-container: #2e9468;
+  --color-on-secondary-container: #f0fff6;
+  --color-secondary-fixed: #beead3;
+  --color-secondary-fixed-dim: #6bc79a;
+  --color-on-secondary-fixed: #04291a;
+  --color-on-secondary-fixed-variant: #14503a;
 
-  --color-tertiary: #800027;
+  --color-tertiary: #7a2331;
   --color-on-tertiary: #ffffff;
-  --color-tertiary-container: #ab0037;
-  --color-on-tertiary-container: #ffb6bc;
-  --color-tertiary-fixed: #ffdadb;
-  --color-tertiary-fixed-dim: #ffb2b8;
-  --color-on-tertiary-fixed: #40000f;
-  --color-on-tertiary-fixed-variant: #91002d;
+  --color-tertiary-container: #a5303f;
+  --color-on-tertiary-container: #ffe3e6;
+  --color-tertiary-fixed: #ffdadd;
+  --color-tertiary-fixed-dim: #e8a6ad;
+  --color-on-tertiary-fixed: #400009;
+  --color-on-tertiary-fixed-variant: #5c1420;
 
-  --color-error: #ba1a1a;
+  --color-error: #e5484d;
   --color-on-error: #ffffff;
-  --color-error-container: #ffdad6;
-  --color-on-error-container: #93000a;
+  --color-error-container: #4a1113;
+  --color-on-error-container: #ffd9da;
 
-  --color-success: #00a36c;
+  --color-success: #2fa86b;
 
-  --color-outline: #797487;
-  --color-outline-variant: #cac3d8;
-  --color-border: #cac3d8;
-  --color-input: #cac3d8;
-  --color-ring: #4300ba;
-  --color-card: #ffffff;
-  --color-card-foreground: #1c1a24;
-  --color-popover: #ffffff;
-  --color-popover-foreground: #1c1a24;
-  --color-muted: #f2ebf9;
-  --color-muted-foreground: #484455;
-  --color-accent: #f2ebf9;
-  --color-accent-foreground: #1c1a24;
-  --color-destructive: #ba1a1a;
+  --color-outline: #8a7e63;
+  --color-outline-variant: #4a4232;
+  --color-border: #33291a;
+  --color-input: #33291a;
+  --color-ring: #c9a24b;
+  --color-card: #1c1810;
+  --color-card-foreground: #f3ead8;
+  --color-popover: #1c1810;
+  --color-popover-foreground: #f3ead8;
+  --color-muted: #241f16;
+  --color-muted-foreground: #c9bba0;
+  --color-accent: #241f16;
+  --color-accent-foreground: #f3ead8;
+  --color-destructive: #e5484d;
   --color-destructive-foreground: #ffffff;
-  --color-foreground: #1c1a24;
+  --color-foreground: #f3ead8;
 }
 
 .material-symbols-outlined {
@@ -161,11 +161,20 @@ details > summary::-webkit-details-marker { display: none; }
   to { transform: scale(1.1); }
 }
 
-.brutalist-card { border: 2px solid #4300ba; border-radius: 0; transition: transform 0.1s ease; }
+.brutalist-card {
+  border: 1px solid var(--color-outline-variant);
+  border-radius: 1rem;
+  background-color: var(--color-surface-container);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.brutalist-card:hover {
+  box-shadow: 0 0 0 1px var(--color-primary), 0 12px 28px -10px rgba(201, 162, 75, 0.35);
+}
+.brutalist-button {
+  border-radius: 0.75rem;
+}
 .brutalist-button:active { transform: scale(0.95); }
-.status-dot-morning { background-color: #5b2bd9; }
-.status-dot-evening { background-color: #fdaf1e; }
-.status-dot-full { background-color: #ba1a1a; }
 
 .masonry-grid { columns: 1; gap: 1rem; }
 @media (min-width: 768px) { .masonry-grid { columns: 2; } }
