@@ -442,7 +442,7 @@ function RulesPanel() {
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-primary text-on-primary uppercase text-xs font-bold tracking-widest">
-                <th className="p-4">Venue</th><th className="p-4">Member</th><th className="p-4">Non-Member</th>
+                <th className="p-4">Venue</th><th className="p-4">Rate</th>
               </tr>
             </thead>
             <tbody className="text-sm">
@@ -450,7 +450,6 @@ function RulesPanel() {
                 <tr key={v.name} className={`border-b-2 border-primary/10 ${i % 2 === 1 ? "bg-surface-variant/30" : ""}`}>
                   <td className="p-4 font-bold">{v.name}</td>
                   <td className="p-4">₹{v.feeMember.toLocaleString("en-IN")}</td>
-                  <td className="p-4">₹{v.feeNonMember.toLocaleString("en-IN")}</td>
                 </tr>
               ))}
             </tbody>
