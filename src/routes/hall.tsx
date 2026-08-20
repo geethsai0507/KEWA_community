@@ -4,7 +4,7 @@ import QRCode from "qrcode";
 import { Icon, SiteHeader, SiteFooter } from "@/components/site-chrome";
 import { VENUES, SLOTS, UPI_ID } from "@/lib/hall/constants";
 import { AvailabilityCalendar } from "@/components/availability-calendar";
-import { verifyMembership } from "@/lib/hall/members";
+import { readGateEmpId } from "@/lib/hall/gate";
 import { calculateBookingFee } from "@/lib/hall/fees";
 import { createBooking, submitUtr } from "@/lib/hall/transactions";
 
@@ -124,12 +124,10 @@ function UpiQrCode({ amount, bookingNumber }: { amount: number; bookingNumber: s
   return <img src={dataUrl} alt="Scan to pay via UPI" width={220} height={220} className="border-2 border-primary" />;
 }
 
-type BookingStep = 1 | 2 | 3 | 4;
+type BookingStep = 1 | 2 | 3;
 
 interface BookingFormState {
-  isMember: boolean | null;
   empId: string;
-  verified: boolean;
   name: string;
   phone: string;
   email: string;
@@ -141,54 +139,32 @@ interface BookingFormState {
   acceptedTnc: boolean;
 }
 
-const EMPTY_FORM: BookingFormState = {
-  isMember: null,
-  empId: "",
-  verified: false,
-  name: "",
-  phone: "",
-  email: "",
-  venue: "",
-  date: "",
-  slot: null,
-  purpose: "",
-  duration: "",
-  acceptedTnc: false,
-};
+function emptyForm(): BookingFormState {
+  return {
+    empId: typeof window === "undefined" ? "" : (readGateEmpId((key) => sessionStorage.getItem(key)) ?? ""),
+    name: "",
+    phone: "",
+    email: "",
+    venue: "",
+    date: "",
+    slot: null,
+    purpose: "",
+    duration: "",
+    acceptedTnc: false,
+  };
+}
 
 function BookingPanel() {
   const [step, setStep] = useState<BookingStep>(1);
-  const [form, setForm] = useState<BookingFormState>(EMPTY_FORM);
-  const [verifyError, setVerifyError] = useState("");
-  const [verifying, setVerifying] = useState(false);
+  const [form, setForm] = useState<BookingFormState>(emptyForm);
   const [bookingResult, setBookingResult] = useState<{ bookingId: string; bookingNumber: string; lookupToken: string; status: "pending-payment" | "pending-approval" } | null>(null);
   const [utr, setUtr] = useState("");
   const [submitError, setSubmitError] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
-  const handleVerify = async () => {
-    if (!form.empId.trim()) {
-      setVerifyError("Enter your Employee ID");
-      return;
-    }
-    setVerifying(true);
-    setVerifyError("");
-    try {
-      const isMember = await verifyMembership(form.empId.trim());
-      if (!isMember) {
-        setVerifyError("No member found with this Employee ID");
-        return;
-      }
-      setForm((f) => ({ ...f, verified: true, isMember: true }));
-    } finally {
-      setVerifying(false);
-    }
-  };
+  const fee = form.venue ? calculateBookingFee(form.venue) : null;
 
-  const fee = form.venue ? calculateBookingFee(form.isMember === true, form.venue) : null;
-
-  const canProceedStep1 = form.isMember === false || (form.isMember === true && form.verified);
-  const canProceedStep2 = Boolean(
+  const canProceedStep1 = Boolean(
     form.name.trim() &&
     /^\d{10}$/.test(form.phone) &&
     /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email) &&
@@ -205,7 +181,7 @@ function BookingPanel() {
     <div className="flex flex-col lg:flex-row gap-s-lg">
       <div className="flex-grow space-y-s-lg">
         <nav className="flex items-center gap-4 text-sm font-bold uppercase tracking-tighter overflow-x-auto pb-2">
-          {(["1. Membership", "2. Details", "3. Payment", "4. Confirmation"] as const).map((label, i) => (
+          {(["1. Details", "2. Payment", "3. Confirmation"] as const).map((label, i) => (
             <span key={label} className={step === i + 1 ? "text-primary whitespace-nowrap" : "text-on-surface/40 whitespace-nowrap"}>
               {label}
             </span>
@@ -214,57 +190,12 @@ function BookingPanel() {
 
         {step === 1 && (
           <section className="space-y-6">
-            <div className="flex gap-4">
-              <button
-                className={`p-4 border-2 border-primary font-bold ${form.isMember === true ? "bg-primary text-on-primary" : ""}`}
-                onClick={() => setForm((f) => ({ ...f, isMember: true }))}
-              >
-                I'm a member
-              </button>
-              <button
-                className={`p-4 border-2 border-primary font-bold ${form.isMember === false ? "bg-primary text-on-primary" : ""}`}
-                onClick={() => setForm((f) => ({ ...f, isMember: false, verified: false }))}
-              >
-                I'm not a member
-              </button>
-            </div>
-            {form.isMember === true && (
+            <div className="grid md:grid-cols-2 gap-s-md">
               <div className="space-y-2">
                 <label className="font-ui-button text-primary block">Employee ID</label>
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={form.empId}
-                    onChange={(e) => setForm((f) => ({ ...f, empId: e.target.value, verified: false }))}
-                    className="flex-grow p-4 border-2 border-primary bg-surface"
-                  />
-                  <button
-                    onClick={handleVerify}
-                    disabled={verifying}
-                    className="px-6 border-2 border-primary bg-secondary-container font-ui-button"
-                  >
-                    {verifying ? "Verifying…" : "Verify"}
-                  </button>
-                </div>
-                {verifyError && <p className="text-error text-sm">{verifyError}</p>}
-                {form.verified && <p className="text-success text-sm">Verified ✅</p>}
+                <input type="text" value={form.empId} readOnly disabled className="w-full p-4 border-2 border-primary bg-surface-variant text-on-surface-variant" />
+                <p className="text-xs text-on-surface-variant">Verified at login.</p>
               </div>
-            )}
-            <div className="flex justify-end pt-s-md">
-              <button
-                disabled={!canProceedStep1}
-                onClick={() => setStep(2)}
-                className="brutalist-button bg-secondary-container text-on-surface px-12 py-4 font-ui-button text-lg border-2 border-primary disabled:opacity-40"
-              >
-                Next: Details
-              </button>
-            </div>
-          </section>
-        )}
-
-        {step === 2 && (
-          <section className="space-y-6">
-            <div className="grid md:grid-cols-2 gap-s-md">
               <div className="space-y-2">
                 <label className="font-ui-button text-primary block">Full Name</label>
                 <input type="text" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} className="w-full p-4 border-2 border-primary bg-surface" />
@@ -313,10 +244,9 @@ function BookingPanel() {
               <input type="checkbox" checked={form.acceptedTnc} onChange={(e) => setForm((f) => ({ ...f, acceptedTnc: e.target.checked }))} />
               I accept the Terms & Conditions
             </label>
-            <div className="flex justify-between pt-s-md">
-              <button onClick={() => setStep(1)} className="px-8 py-4 border-2 border-primary font-ui-button">Back</button>
+            <div className="flex justify-end pt-s-md">
               <button
-                disabled={!canProceedStep2 || submitting}
+                disabled={!canProceedStep1 || submitting}
                 onClick={async () => {
                   setSubmitting(true);
                   setSubmitError("");
@@ -331,10 +261,9 @@ function BookingPanel() {
                       slot: form.slot!,
                       purpose: form.purpose,
                       duration: form.duration,
-                      isMember: form.isMember === true,
                     });
                     setBookingResult(result);
-                    setStep(3);
+                    setStep(2);
                   } catch (err) {
                     console.error("createBooking failed:", err);
                     setSubmitError(
@@ -357,7 +286,7 @@ function BookingPanel() {
           </section>
         )}
 
-        {step === 3 && bookingResult && (
+        {step === 2 && bookingResult && (
           <section className="space-y-6">
             {bookingResult.status === "pending-approval" ? (
               <div className="brutalist-card p-6 bg-surface space-y-2">
@@ -368,10 +297,10 @@ function BookingPanel() {
             ) : (
               <div className="brutalist-card p-6 bg-surface space-y-4">
                 <h3 className="font-headline text-headline-md text-primary">Pay via UPI</h3>
-                <p>Amount: <strong>₹{calculateBookingFee(form.isMember === true, form.venue)}</strong></p>
+                <p>Amount: <strong>₹{calculateBookingFee(form.venue)}</strong></p>
                 <p>UPI ID: <strong>{UPI_ID}</strong></p>
                 <UpiQrCode
-                  amount={calculateBookingFee(form.isMember === true, form.venue)}
+                  amount={calculateBookingFee(form.venue)}
                   bookingNumber={bookingResult.bookingNumber}
                 />
                 <p className="text-sm opacity-70">Scan the QR with any UPI app, or pay manually to the UPI ID above. Complete the payment within 15 minutes, then enter the UTR number below.</p>
@@ -387,7 +316,7 @@ function BookingPanel() {
                     setSubmitError("");
                     try {
                       await submitUtr(bookingResult.bookingId, utr.trim());
-                      setStep(4);
+                      setStep(3);
                     } catch (err) {
                       setSubmitError(
                         err instanceof Error && err.message === "EXPIRED"
@@ -409,7 +338,7 @@ function BookingPanel() {
           </section>
         )}
 
-        {step === 4 && bookingResult && (
+        {step === 3 && bookingResult && (
           <section className="space-y-4">
             <div className="brutalist-card p-6 bg-surface space-y-2">
               <h3 className="font-headline text-headline-md text-primary">Submitted!</h3>
@@ -419,7 +348,7 @@ function BookingPanel() {
               </p>
               <button
                 onClick={() => {
-                  setForm(EMPTY_FORM);
+                  setForm(emptyForm());
                   setBookingResult(null);
                   setUtr("");
                   setStep(1);
