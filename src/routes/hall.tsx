@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import QRCode from "qrcode";
 import { Icon, SiteHeader, SiteFooter } from "@/components/site-chrome";
 import { VENUES, SLOTS, UPI_ID } from "@/lib/hall/constants";
-import { subscribeToCalendar, type DayStatus } from "@/lib/hall/calendar";
+import { AvailabilityCalendar } from "@/components/availability-calendar";
 import { verifyMembership } from "@/lib/hall/members";
 import { calculateBookingFee } from "@/lib/hall/fees";
 import { createBooking, submitUtr } from "@/lib/hall/transactions";
@@ -86,97 +86,22 @@ function HallPage() {
 
 function CalendarPanel() {
   const [venue, setVenue] = useState<string>(VENUES[0].name);
-  const [cursor, setCursor] = useState(() => new Date());
-  const [byDate, setByDate] = useState<Record<string, { Morning: DayStatus; Evening: DayStatus }>>({});
-
-  useEffect(() => {
-    const unsubscribe = subscribeToCalendar(venue, cursor.getFullYear(), cursor.getMonth(), setByDate);
-    return unsubscribe;
-  }, [venue, cursor]);
-
-  const year = cursor.getFullYear();
-  const month = cursor.getMonth();
-  const daysInMonth = new Date(year, month + 1, 0).getDate();
-  const firstWeekday = new Date(year, month, 1).getDay();
-
-  const dotForStatus = (s: DayStatus) =>
-    s === "confirmed"
-      ? "status-dot-full"
-      : s === "held"
-        ? "status-dot-evening"
-        : s === "pending"
-          ? "status-dot-morning"
-          : s === "blocked"
-            ? "bg-on-surface/40"
-            : "border border-primary";
-
-  // Most-restrictive-wins: a day shows one dot summarizing both slots, so a fully booked
-  // slot always outranks a still-available one.
-  const PRIORITY: DayStatus[] = ["confirmed", "held", "pending", "blocked", "available"];
-  const worstStatus = (status: { Morning: DayStatus; Evening: DayStatus }) =>
-    PRIORITY.find((s) => status.Morning === s || status.Evening === s) ?? "available";
-
-  const dayCell = (day: number) => {
-    const dateStr = `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-    const status = byDate[dateStr] ?? { Morning: "available" as DayStatus, Evening: "available" as DayStatus };
-    const overall = worstStatus(status);
-    return (
-      <div key={day} className="bg-surface p-4 min-h-[120px] relative group hover:bg-surface-variant transition-colors">
-        <span className="font-headline text-headline-md text-primary opacity-30">{day}</span>
-        <div className="absolute bottom-4 left-4">
-          <div
-            className={`w-4 h-4 rounded-full ${dotForStatus(overall)}`}
-            title={`Morning: ${status.Morning}, Evening: ${status.Evening}`}
-          />
-        </div>
-      </div>
-    );
-  };
 
   return (
     <div className="space-y-s-md">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <h2 className="font-headline text-headline-lg text-primary">Availability Calendar</h2>
-        <div className="flex flex-wrap gap-4 items-center">
-          <select
-            value={venue}
-            onChange={(e) => setVenue(e.target.value)}
-            className="p-2 border-2 border-primary bg-surface font-ui-button"
-          >
-            {VENUES.map((v) => (
-              <option key={v.name} value={v.name}>{v.name}</option>
-            ))}
-          </select>
-          <div className="flex items-center gap-2">
-            <button
-              className="px-3 py-1 border-2 border-primary"
-              onClick={() => setCursor(new Date(year, month - 1, 1))}
-            >
-              ←
-            </button>
-            <span className="font-bold">{cursor.toLocaleDateString("en-IN", { month: "long", year: "numeric" })}</span>
-            <button
-              className="px-3 py-1 border-2 border-primary"
-              onClick={() => setCursor(new Date(year, month + 1, 1))}
-            >
-              →
-            </button>
-          </div>
-          <div className="flex items-center gap-4 text-label-md">
-            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full status-dot-morning"></span> Pending approval</span>
-            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full status-dot-evening"></span> Held (payment window)</span>
-            <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-full status-dot-full"></span> Confirmed</span>
-          </div>
-        </div>
+        <select
+          value={venue}
+          onChange={(e) => setVenue(e.target.value)}
+          className="p-2 border-2 border-primary bg-surface font-ui-button"
+        >
+          {VENUES.map((v) => (
+            <option key={v.name} value={v.name}>{v.name}</option>
+          ))}
+        </select>
       </div>
-
-      <div className="grid grid-cols-7 border-2 border-primary bg-primary gap-[2px]">
-        {["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map((d) => (
-          <div key={d} className="bg-primary-container text-on-primary p-3 text-center font-bold uppercase text-xs">{d}</div>
-        ))}
-        {Array.from({ length: firstWeekday }, (_, i) => <div key={`pad-${i}`} className="bg-surface" />)}
-        {Array.from({ length: daysInMonth }, (_, i) => dayCell(i + 1))}
-      </div>
+      <AvailabilityCalendar venue={venue} />
     </div>
   );
 }
