@@ -8,7 +8,7 @@ import { Reveal } from "@/components/reveal";
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "Executives Club Community Portal — A neighborhood for everyone" },
+      { title: "Executives Club Community Portal — Exclusive Amenities & Events for Members" },
       {
         name: "description",
         content:
@@ -18,7 +18,7 @@ export const Route = createFileRoute("/")({
       {
         property: "og:description",
         content:
-          "A neighborhood for everyone. Check the hall, RSVP to gatherings and stay connected.",
+          "Exclusive amenities and events for members. Check the hall, RSVP to gatherings and stay connected.",
       },
     ],
   }),
@@ -94,7 +94,7 @@ function Home() {
         <section className="bg-primary text-on-primary min-h-[500px] flex flex-col items-center justify-center text-center overflow-hidden relative">
           <div className="flex flex-col items-center px-margin-mobile md:px-margin-desktop py-s-xl z-10">
             <h1 className="hero-headline font-display text-display-lg-mobile lg:text-display-lg mb-8 max-w-2xl">
-              A neighborhood for everyone.
+              Exclusive Amenities & Events for Members
             </h1>
             <div className="hero-btns flex flex-wrap justify-center gap-4" style={{ animationDelay: "0.3s" }}>
               {!verified && (

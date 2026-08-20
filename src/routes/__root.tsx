@@ -86,7 +86,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       {
         property: "og:description",
         content:
-          "A neighborhood for everyone. Check the community hall, RSVP to gatherings, and stay in the loop.",
+          "Exclusive amenities and events for members. Check the community hall, RSVP to gatherings, and stay in the loop.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
