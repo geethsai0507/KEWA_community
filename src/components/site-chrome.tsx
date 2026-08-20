@@ -25,9 +25,9 @@ export function SiteHeader({ active }: { active: "status" | "gatherings" | "noti
         </nav>
       </div>
       <div className="flex items-center gap-4">
-        <div className="hidden sm:flex items-center bg-[#D1FFBD] px-4 py-1.5 rounded-full border-2 border-[#1E4D12]">
-          <span className="w-2 h-2 bg-[#1E4D12] rounded-full mr-2 animate-pulse"></span>
-          <span className="text-[12px] font-bold text-[#1E4D12] uppercase tracking-wider">
+        <div className="hidden sm:flex items-center bg-secondary/20 px-4 py-1.5 rounded-full border border-secondary">
+          <span className="w-2 h-2 bg-secondary rounded-full mr-2 animate-pulse"></span>
+          <span className="text-[12px] font-bold text-secondary uppercase tracking-wider">
             Hall free until 6 pm
           </span>
         </div>
