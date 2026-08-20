@@ -75,10 +75,12 @@ function HallPage() {
           })}
         </div>
 
-        {tab === "calendar" && <CalendarPanel onBook={handleBookRequest} />}
-        {tab === "booking" && <BookingPanel seed={bookingSeed} />}
-        {tab === "my-bookings" && <MyBookingsPanel />}
-        {tab === "rules" && <RulesPanel />}
+        <div key={tab} className="animate-in fade-in duration-[220ms] ease-club">
+          {tab === "calendar" && <CalendarPanel onBook={handleBookRequest} />}
+          {tab === "booking" && <BookingPanel seed={bookingSeed} />}
+          {tab === "my-bookings" && <MyBookingsPanel />}
+          {tab === "rules" && <RulesPanel />}
+        </div>
       </main>
 
       <SiteFooter />

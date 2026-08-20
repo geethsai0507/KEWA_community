@@ -1,5 +1,6 @@
 import { createContext, useContext, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { verifyMembership } from "@/lib/hall/members";
+import { useUnmountDelay } from "@/hooks/use-unmount-delay";
 import {
   GATE_SESSION_KEY,
   GATE_EMP_ID_KEY,
@@ -96,14 +97,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const showModal = useUnmountDelay(modalOpen, 320);
+
   return (
     <AuthContext.Provider value={{ verified, empId, requireLogin, logout }}>
       {children}
-      {modalOpen && (
-        <div className="fixed inset-0 z-[100] flex min-h-screen items-center justify-center bg-background/80 backdrop-blur-sm px-4">
+      {showModal && (
+        <div
+          className={`fixed inset-0 z-[100] flex min-h-screen items-center justify-center bg-background/80 backdrop-blur-sm px-4 duration-[320ms] ease-club ${
+            modalOpen ? "animate-in fade-in" : "animate-out fade-out"
+          }`}
+        >
           <form
             onSubmit={handleSubmit}
-            className="brutalist-card relative w-full max-w-sm space-y-6 bg-surface-container p-8 text-center text-on-background"
+            className={`brutalist-card relative w-full max-w-sm space-y-6 bg-surface-container p-8 text-center text-on-background duration-[320ms] ease-club ${
+              modalOpen ? "animate-in fade-in zoom-in-95" : "animate-out fade-out zoom-out-95"
+            }`}
           >
             <button
               type="button"
@@ -135,7 +144,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             <button
               type="submit"
               disabled={verifying}
-              className="w-full rounded-xl border border-primary bg-primary p-4 font-bold uppercase tracking-wide text-on-primary disabled:opacity-60"
+              className="w-full rounded-xl border border-primary bg-primary p-4 font-bold uppercase tracking-wide text-on-primary transition-all duration-[220ms] ease-club hover:-translate-y-0.5 hover:shadow-[0_10px_24px_-10px_rgba(201,162,75,0.5)] disabled:opacity-60 disabled:hover:translate-y-0 disabled:hover:shadow-none"
             >
               {verifying ? "Verifying…" : "Login"}
             </button>

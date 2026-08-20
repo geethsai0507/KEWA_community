@@ -53,7 +53,7 @@ export function SiteHeader({ active }: { active: "status" | "gatherings" | "noti
         ) : (
           <button
             onClick={() => requireLogin()}
-            className="hidden sm:flex items-center gap-2 rounded-full border border-primary bg-primary px-4 py-1.5 font-ui-button text-[12px] font-bold uppercase tracking-wider text-on-primary hover:bg-primary-container transition-colors"
+            className="hidden sm:flex items-center gap-2 rounded-full border border-primary bg-primary px-4 py-1.5 font-ui-button text-[12px] font-bold uppercase tracking-wider text-on-primary hover:bg-primary-container transition-all duration-[220ms] ease-club hover:-translate-y-0.5 hover:shadow-[0_8px_18px_-8px_rgba(201,162,75,0.5)]"
           >
             <Icon name="account_circle" className="text-base" />
             Login

@@ -3,6 +3,7 @@ import { Icon, SiteHeader, SiteFooter } from "@/components/site-chrome";
 import { VENUES } from "@/lib/hall/constants";
 import { AvailabilityCalendar } from "@/components/availability-calendar";
 import { useAuth } from "@/components/auth-context";
+import { Reveal } from "@/components/reveal";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -91,14 +92,14 @@ function Home() {
               {!verified && (
                 <button
                   onClick={() => requireLogin()}
-                  className="bg-on-primary text-primary font-ui-button text-ui-button px-8 py-4 uppercase tracking-widest hover:bg-primary-container hover:text-on-primary-container transition-all active:scale-95"
+                  className="bg-on-primary text-primary font-ui-button text-ui-button px-8 py-4 uppercase tracking-widest hover:bg-primary-container hover:text-on-primary-container transition-all duration-[220ms] ease-club hover:-translate-y-0.5 hover:shadow-[0_10px_24px_-10px_rgba(0,0,0,0.35)] active:scale-95"
                 >
                   Login to your Account
                 </button>
               )}
               <Link
                 to="/hall"
-                className="bg-secondary-container text-on-secondary-fixed font-ui-button text-ui-button px-8 py-4 uppercase tracking-widest hover:bg-tertiary-container hover:text-on-tertiary transition-all active:scale-95"
+                className="bg-secondary-container text-on-secondary-fixed font-ui-button text-ui-button px-8 py-4 uppercase tracking-widest hover:bg-tertiary-container hover:text-on-tertiary transition-all duration-[220ms] ease-club hover:-translate-y-0.5 hover:shadow-[0_10px_24px_-10px_rgba(201,162,75,0.5)] active:scale-95"
               >
                 Check hall availability
               </Link>
@@ -147,8 +148,9 @@ function Home() {
               </p>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
-              {gatherings.map((g) => (
-                <div key={g.title} className="group relative bg-white brutalist-card overflow-hidden hover:-translate-y-2 transition-transform duration-300">
+              {gatherings.map((g, i) => (
+                <Reveal key={g.title} delayMs={i * 90}>
+                <div className="group relative bg-white brutalist-card overflow-hidden hover:-translate-y-2 transition-transform duration-300">
                   <div className="h-48 bg-surface-variant overflow-hidden">
                     <img className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" alt={g.title} src={g.img} />
                   </div>
@@ -165,6 +167,7 @@ function Home() {
                     </button>
                   </div>
                 </div>
+                </Reveal>
               ))}
             </div>
           </div>
@@ -229,9 +232,11 @@ function Home() {
           <div className="px-margin-mobile md:px-margin-desktop">
             <div className="masonry-grid">
               {gallery.map((g, i) => (
-                <div key={i} className={`mb-4 brutalist-card overflow-hidden ${g.h} relative group`}>
-                  <img className="w-full h-full object-cover grayscale hover:grayscale-0 transition-all duration-700" alt="Community moment" src={g.src} />
-                </div>
+                <Reveal key={i} delayMs={(i % 3) * 90} className="mb-4">
+                  <div className={`brutalist-card overflow-hidden ${g.h} relative group`}>
+                    <img className="w-full h-full object-cover grayscale hover:grayscale-0 transition-all duration-700" alt="Community moment" src={g.src} />
+                  </div>
+                </Reveal>
               ))}
             </div>
           </div>

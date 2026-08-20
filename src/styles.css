@@ -64,7 +64,9 @@
   --spacing-margin-mobile: 16px;
   --spacing-margin-desktop: 64px;
 
-  --radius: 0;
+  --ease-club: cubic-bezier(0.16, 1, 0.3, 1);
+  --duration-club: 220ms;
+  --duration-club-slow: 320ms;
 
   --color-background: #14110c;
   --color-on-background: #f3ead8;
@@ -176,8 +178,23 @@ details > summary::-webkit-details-marker { display: none; }
 }
 .brutalist-button {
   border-radius: 0.75rem;
+  transition: transform var(--duration-club) var(--ease-club), box-shadow var(--duration-club) var(--ease-club);
+}
+.brutalist-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 24px -10px rgba(201, 162, 75, 0.45);
 }
 .brutalist-button:active { transform: scale(0.95); }
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-headline, .hero-btns, .hero-img,
+  .animate-in, .animate-out,
+  .brutalist-button, .brutalist-card {
+    animation: none !important;
+    transition: none !important;
+  }
+  .hero-btns { opacity: 1; }
+}
 
 .masonry-grid { columns: 1; gap: 1rem; }
 @media (min-width: 768px) { .masonry-grid { columns: 2; } }

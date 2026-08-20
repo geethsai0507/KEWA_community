@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { subscribeToCalendar, dayColorFor, dayStatusLabel, type DayStatus } from "@/lib/hall/calendar";
+import { useUnmountDelay } from "@/hooks/use-unmount-delay";
 
 type DayEntry = { Morning: DayStatus; Evening: DayStatus };
 
@@ -28,6 +29,12 @@ export function AvailabilityCalendar({
   const [cursor, setCursor] = useState(() => new Date());
   const [byDate, setByDate] = useState<Record<string, DayEntry>>({});
   const [selected, setSelected] = useState<{ date: string; entry: DayEntry } | null>(null);
+  const [displayed, setDisplayed] = useState<{ date: string; entry: DayEntry } | null>(null);
+  const showPopup = useUnmountDelay(selected !== null, 320);
+
+  useEffect(() => {
+    if (selected) setDisplayed(selected);
+  }, [selected]);
 
   useEffect(() => {
     const unsubscribe = subscribeToCalendar(venue, cursor.getFullYear(), cursor.getMonth(), setByDate);
@@ -79,7 +86,7 @@ export function AvailabilityCalendar({
     </div>
   );
 
-  const canBook = selected ? selected.entry.Morning === "available" || selected.entry.Evening === "available" : false;
+  const canBook = displayed ? displayed.entry.Morning === "available" || displayed.entry.Evening === "available" : false;
 
   return (
     <div className="brutalist-card space-y-4 bg-surface-container p-6">
@@ -111,9 +118,17 @@ export function AvailabilityCalendar({
         <span className="flex items-center gap-1"><span className={`h-3 w-3 rounded-full ${CELL_BG.red}`}></span> Booked</span>
       </div>
 
-      {selected && (
-        <div className="fixed inset-0 z-[100] flex min-h-screen items-center justify-center bg-background/80 backdrop-blur-sm px-4">
-          <div className="brutalist-card relative w-full max-w-sm space-y-6 bg-surface-container p-8 text-on-background">
+      {showPopup && displayed && (
+        <div
+          className={`fixed inset-0 z-[100] flex min-h-screen items-center justify-center bg-background/80 backdrop-blur-sm px-4 duration-[320ms] ease-club ${
+            selected ? "animate-in fade-in" : "animate-out fade-out"
+          }`}
+        >
+          <div
+            className={`brutalist-card relative w-full max-w-sm space-y-6 bg-surface-container p-8 text-on-background duration-[320ms] ease-club ${
+              selected ? "animate-in fade-in zoom-in-95" : "animate-out fade-out zoom-out-95"
+            }`}
+          >
             <button
               type="button"
               onClick={() => setSelected(null)}
@@ -123,7 +138,7 @@ export function AvailabilityCalendar({
               ✕
             </button>
             <h2 className="font-display text-xl font-extrabold tracking-tight text-primary">
-              {new Date(`${selected.date}T00:00:00`).toLocaleDateString("en-IN", {
+              {new Date(`${displayed.date}T00:00:00`).toLocaleDateString("en-IN", {
                 weekday: "long",
                 day: "numeric",
                 month: "long",
@@ -133,21 +148,21 @@ export function AvailabilityCalendar({
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <span className="font-ui-button text-sm uppercase tracking-wide text-on-surface-variant">Morning</span>
-                <span className="text-sm font-bold">{dayStatusLabel(selected.entry.Morning)}</span>
+                <span className="text-sm font-bold">{dayStatusLabel(displayed.entry.Morning)}</span>
               </div>
               <div className="flex items-center justify-between">
                 <span className="font-ui-button text-sm uppercase tracking-wide text-on-surface-variant">Evening</span>
-                <span className="text-sm font-bold">{dayStatusLabel(selected.entry.Evening)}</span>
+                <span className="text-sm font-bold">{dayStatusLabel(displayed.entry.Evening)}</span>
               </div>
             </div>
             {canBook && onBook && (
               <button
                 type="button"
                 onClick={() => {
-                  onBook(selected.date, venue);
+                  onBook(displayed.date, venue);
                   setSelected(null);
                 }}
-                className="w-full rounded-xl border border-primary bg-primary p-4 font-bold uppercase tracking-wide text-on-primary transition-colors hover:bg-primary-container"
+                className="w-full rounded-xl border border-primary bg-primary p-4 font-bold uppercase tracking-wide text-on-primary transition-all duration-[220ms] ease-club hover:-translate-y-0.5 hover:shadow-[0_10px_24px_-10px_rgba(201,162,75,0.5)]"
               >
                 Book this date
               </button>
