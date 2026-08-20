@@ -5,6 +5,12 @@ import type { BookingStatus, Slot } from "./types";
 
 export type DayStatus = "available" | "confirmed" | "pending" | "held" | "blocked";
 
+export function dayColorFor(status: DayStatus): "red" | "yellow" | "green" {
+  if (status === "pending") return "yellow";
+  if (status === "available") return "green";
+  return "red"; // confirmed | held | blocked
+}
+
 interface SlotLike {
   status: BookingStatus;
   expiresAt: { toMillis(): number } | null;
