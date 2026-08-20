@@ -11,6 +11,21 @@ export function dayColorFor(status: DayStatus): "red" | "yellow" | "green" {
   return "red"; // confirmed | held | blocked
 }
 
+export function dayStatusLabel(status: DayStatus): string {
+  switch (status) {
+    case "available":
+      return "Free";
+    case "pending":
+      return "Pending Approval";
+    case "confirmed":
+      return "Booked";
+    case "held":
+      return "Payment in Progress";
+    case "blocked":
+      return "Blocked";
+  }
+}
+
 interface SlotLike {
   status: BookingStatus;
   expiresAt: { toMillis(): number } | null;

@@ -33,21 +33,20 @@ type Tab = "calendar" | "booking" | "my-bookings" | "rules";
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "calendar", label: "Hall Status" },
-  { id: "booking", label: "Book the Hall" },
   { id: "my-bookings", label: "My Bookings" },
   { id: "rules", label: "Rules & Rates" },
 ];
 
 function HallPage() {
   const [tab, setTab] = useState<Tab>("calendar");
+  const [bookingSeed, setBookingSeed] = useState<{ venue: string; date: string } | null>(null);
   const { requireLogin } = useAuth();
 
-  const selectTab = (id: Tab) => {
-    if (id === "booking") {
-      requireLogin(() => setTab("booking"));
-      return;
-    }
-    setTab(id);
+  const handleBookRequest = (date: string, venue: string) => {
+    requireLogin(() => {
+      setBookingSeed({ venue, date });
+      setTab("booking");
+    });
   };
 
   return (
@@ -63,7 +62,7 @@ function HallPage() {
                 key={t.id}
                 role="tab"
                 aria-selected={active}
-                onClick={() => selectTab(t.id)}
+                onClick={() => setTab(t.id)}
                 className={`px-6 py-3 font-ui-button text-lg transition-all focus:outline-none ${
                   active
                     ? "bg-primary text-on-primary border-t-2 border-x-2 border-primary"
@@ -76,8 +75,8 @@ function HallPage() {
           })}
         </div>
 
-        {tab === "calendar" && <CalendarPanel />}
-        {tab === "booking" && <BookingPanel />}
+        {tab === "calendar" && <CalendarPanel onBook={handleBookRequest} />}
+        {tab === "booking" && <BookingPanel seed={bookingSeed} />}
         {tab === "my-bookings" && <MyBookingsPanel />}
         {tab === "rules" && <RulesPanel />}
       </main>
@@ -94,7 +93,7 @@ function HallPage() {
   );
 }
 
-function CalendarPanel() {
+function CalendarPanel({ onBook }: { onBook: (date: string, venue: string) => void }) {
   const [venue, setVenue] = useState<string>(VENUES[0].name);
 
   return (
@@ -111,7 +110,7 @@ function CalendarPanel() {
           ))}
         </select>
       </div>
-      <AvailabilityCalendar venue={venue} />
+      <AvailabilityCalendar venue={venue} onBook={onBook} />
     </div>
   );
 }
@@ -149,14 +148,14 @@ interface BookingFormState {
   acceptedTnc: boolean;
 }
 
-function emptyForm(): BookingFormState {
+function emptyForm(seed?: { venue: string; date: string } | null): BookingFormState {
   return {
     empId: typeof window === "undefined" ? "" : (readGateEmpId((key) => sessionStorage.getItem(key)) ?? ""),
     name: "",
     phone: "",
     email: "",
-    venue: "",
-    date: "",
+    venue: seed?.venue ?? "",
+    date: seed?.date ?? "",
     slot: null,
     purpose: "",
     duration: "",
@@ -164,9 +163,9 @@ function emptyForm(): BookingFormState {
   };
 }
 
-function BookingPanel() {
+function BookingPanel({ seed }: { seed: { venue: string; date: string } | null }) {
   const [step, setStep] = useState<BookingStep>(1);
-  const [form, setForm] = useState<BookingFormState>(emptyForm);
+  const [form, setForm] = useState<BookingFormState>(() => emptyForm(seed));
   const [bookingResult, setBookingResult] = useState<{ bookingId: string; bookingNumber: string; lookupToken: string; status: "pending-payment" | "pending-approval" } | null>(null);
   const [utr, setUtr] = useState("");
   const [submitError, setSubmitError] = useState("");
