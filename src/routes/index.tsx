@@ -2,6 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { Icon, SiteHeader, SiteFooter } from "@/components/site-chrome";
 import { VENUES } from "@/lib/hall/constants";
 import { AvailabilityCalendar } from "@/components/availability-calendar";
+import { useAuth } from "@/components/auth-context";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -74,6 +75,7 @@ const contacts = [
 
 
 function Home() {
+  const { verified, requireLogin } = useAuth();
   return (
     <div className="bg-background text-on-background">
       <SiteHeader active="status" />
@@ -86,6 +88,14 @@ function Home() {
               A neighborhood for everyone.
             </h1>
             <div className="hero-btns flex flex-wrap gap-4" style={{ animationDelay: "0.3s" }}>
+              {!verified && (
+                <button
+                  onClick={() => requireLogin()}
+                  className="bg-on-primary text-primary font-ui-button text-ui-button px-8 py-4 uppercase tracking-widest hover:bg-primary-container hover:text-on-primary-container transition-all active:scale-95"
+                >
+                  Login to your Account
+                </button>
+              )}
               <Link
                 to="/hall"
                 className="bg-secondary-container text-on-secondary-fixed font-ui-button text-ui-button px-8 py-4 uppercase tracking-widest hover:bg-tertiary-container hover:text-on-tertiary transition-all active:scale-95"

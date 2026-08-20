@@ -1,23 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { GATE_SESSION_KEY, GATE_EMP_ID_KEY, isAdminPath, readGateSession, readGateEmpId, gateErrorMessage } from "./gate";
-
-describe("isAdminPath", () => {
-  it("matches the bare /admin path", () => {
-    expect(isAdminPath("/admin")).toBe(true);
-  });
-  it("matches admin sub-paths", () => {
-    expect(isAdminPath("/admin/login")).toBe(true);
-    expect(isAdminPath("/admin/dashboard")).toBe(true);
-  });
-  it("does not match non-admin paths", () => {
-    expect(isAdminPath("/")).toBe(false);
-    expect(isAdminPath("/hall")).toBe(false);
-    expect(isAdminPath("/hall/status")).toBe(false);
-  });
-  it("does not match paths that merely start with the same letters", () => {
-    expect(isAdminPath("/administration")).toBe(false);
-  });
-});
+import { GATE_SESSION_KEY, GATE_EMP_ID_KEY, readGateSession, readGateEmpId, gateErrorMessage } from "./gate";
 
 describe("readGateSession", () => {
   it("returns true when the session flag is set to \"1\"", () => {

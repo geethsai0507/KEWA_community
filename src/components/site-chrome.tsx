@@ -1,10 +1,12 @@
 import { Link } from "@tanstack/react-router";
+import { useAuth } from "@/components/auth-context";
 
 export function Icon({ name, className = "" }: { name: string; className?: string }) {
   return <span className={`material-symbols-outlined ${className}`}>{name}</span>;
 }
 
 export function SiteHeader({ active }: { active: "status" | "gatherings" | "notice" | "gallery" | "contacts" }) {
+  const { verified, empId, requireLogin, logout } = useAuth();
   const linkBase = "font-ui-button text-ui-button transition-colors";
   const cls = (k: typeof active) =>
     active === k
@@ -34,6 +36,29 @@ export function SiteHeader({ active }: { active: "status" | "gatherings" | "noti
         <button className="p-2 hover:bg-surface-container transition-colors text-primary" aria-label="Search">
           <Icon name="search" />
         </button>
+        {verified ? (
+          <div className="hidden sm:flex items-center gap-2 rounded-full border border-outline-variant bg-surface-container px-3 py-1.5">
+            <Icon name="account_circle" className="text-primary text-xl" />
+            <span className="text-[12px] font-bold uppercase tracking-wider text-on-surface">
+              Employee {empId}
+            </span>
+            <button
+              onClick={logout}
+              aria-label="Log out"
+              className="ml-1 text-on-surface-variant hover:text-error transition-colors"
+            >
+              <Icon name="logout" className="text-base" />
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={() => requireLogin()}
+            className="hidden sm:flex items-center gap-2 rounded-full border border-primary bg-primary px-4 py-1.5 font-ui-button text-[12px] font-bold uppercase tracking-wider text-on-primary hover:bg-primary-container transition-colors"
+          >
+            <Icon name="account_circle" className="text-base" />
+            Login
+          </button>
+        )}
         <button className="lg:hidden p-2 text-primary" aria-label="Menu">
           <Icon name="menu" />
         </button>

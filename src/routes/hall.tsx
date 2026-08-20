@@ -5,6 +5,7 @@ import { Icon, SiteHeader, SiteFooter } from "@/components/site-chrome";
 import { VENUES, SLOTS, UPI_ID } from "@/lib/hall/constants";
 import { AvailabilityCalendar } from "@/components/availability-calendar";
 import { readGateEmpId } from "@/lib/hall/gate";
+import { useAuth } from "@/components/auth-context";
 import { calculateBookingFee } from "@/lib/hall/fees";
 import { createBooking, submitUtr } from "@/lib/hall/transactions";
 
@@ -39,6 +40,15 @@ const TABS: { id: Tab; label: string }[] = [
 
 function HallPage() {
   const [tab, setTab] = useState<Tab>("calendar");
+  const { requireLogin } = useAuth();
+
+  const selectTab = (id: Tab) => {
+    if (id === "booking") {
+      requireLogin(() => setTab("booking"));
+      return;
+    }
+    setTab(id);
+  };
 
   return (
     <div className="bg-background text-on-surface min-h-screen">
@@ -53,7 +63,7 @@ function HallPage() {
                 key={t.id}
                 role="tab"
                 aria-selected={active}
-                onClick={() => setTab(t.id)}
+                onClick={() => selectTab(t.id)}
                 className={`px-6 py-3 font-ui-button text-lg transition-all focus:outline-none ${
                   active
                     ? "bg-primary text-on-primary border-t-2 border-x-2 border-primary"
