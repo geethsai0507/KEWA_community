@@ -12,8 +12,8 @@ function worstStatus(entry: DayEntry): DayStatus {
 
 const CELL_BG: Record<"red" | "yellow" | "green", string> = {
   red: "bg-tertiary/70 text-on-tertiary",
-  yellow: "bg-secondary-container/70 text-on-secondary-container",
-  green: "bg-secondary/20 text-on-surface",
+  yellow: "bg-warning/70 text-on-warning",
+  green: "bg-secondary/35 text-on-surface",
 };
 
 export function AvailabilityCalendar({ venue, compact = false }: { venue: string; compact?: boolean }) {

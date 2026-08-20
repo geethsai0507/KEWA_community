@@ -166,6 +166,7 @@ function BookingPanel() {
 
   const canProceedStep1 = Boolean(
     form.name.trim() &&
+    form.empId.trim() &&
     /^\d{10}$/.test(form.phone) &&
     /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email) &&
     form.venue &&

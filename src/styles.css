@@ -118,6 +118,9 @@
 
   --color-success: #2fa86b;
 
+  --color-warning: #e0a72a;
+  --color-on-warning: #2a1e00;
+
   --color-outline: #8a7e63;
   --color-outline-variant: #4a4232;
   --color-border: #33291a;
@@ -181,8 +184,8 @@ details > summary::-webkit-details-marker { display: none; }
 @media (min-width: 1024px) { .masonry-grid { columns: 3; } }
 
 ::-webkit-scrollbar { width: 8px; }
-::-webkit-scrollbar-track { background: #fdf7ff; }
-::-webkit-scrollbar-thumb { background: #4300ba; border-radius: 0; }
+::-webkit-scrollbar-track { background: var(--color-surface-container); }
+::-webkit-scrollbar-thumb { background: var(--color-outline); border-radius: 0; }
 
 body {
   background-color: var(--color-background);
