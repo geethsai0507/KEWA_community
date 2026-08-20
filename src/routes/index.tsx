@@ -60,11 +60,12 @@ const gatherings = [
     tag: "Sports",
     tagBg: "bg-tertiary text-on-tertiary",
     title: "Billiards Tournament",
-    time: "05:00 PM",
+    time: "Date TBA",
     place: "Games Room",
-    cta: "Register",
-    // TODO: placeholder photo (reused from the Meeting card) until a real event photo is provided.
-    img: "https://lh3.googleusercontent.com/aida-public/AB6AXuAwYuIa0in5x2rOtX5gvxIo9J3vAIe2SYWgKX58x5ibQAMIiI7gfZY2OvBmQD5Ev7fDfm-sjmX7w4QM0SlaBAVla5bUI5D1VUgJdp8OwNuAnfRp7pKol9g6Q6l-9JDJWkK2SXt0jyWARLFIGc70cMt7imr9xhd9eZXcvGBvsWp40EDUd34iMVxN_PBgN-af3FdRSyTW35CaETXtIUsX0lzrmLSuH0C-7JEZXeRyduJOWiNpsGIMSpEJB9XB3MwbBMNiwvdjfkmsurA",
+    cta: "Stay Tuned",
+    img: "/images/billiards-tournament.png",
+    // Poster's headline sits near the top; bias the crop up so it stays in frame at h-48.
+    imgPosition: "50% 30%",
   },
 ];
 
@@ -162,7 +163,12 @@ function Home() {
                 <Reveal key={g.title} delayMs={i * 90}>
                 <div className="group relative bg-white brutalist-card overflow-hidden hover:-translate-y-2 transition-transform duration-300">
                   <div className="h-48 bg-surface-variant overflow-hidden">
-                    <img className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" alt={g.title} src={g.img} />
+                    <img
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                      style={g.imgPosition ? { objectPosition: g.imgPosition } : undefined}
+                      alt={g.title}
+                      src={g.img}
+                    />
                   </div>
                   <div className="p-6">
                     <span className={`inline-block font-label-md text-label-md px-3 py-1 mb-4 uppercase ${g.tagBg}`}>{g.tag}</span>
