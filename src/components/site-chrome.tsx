@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { useAuth } from "@/components/auth-context";
 import { useTheme } from "@/components/theme-context";
@@ -9,13 +10,18 @@ export function Icon({ name, className = "" }: { name: string; className?: strin
 export function SiteHeader({ active }: { active: "status" | "gatherings" | "notice" | "gallery" | "contacts" }) {
   const { verified, empId, requireLogin, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
+  const [menuOpen, setMenuOpen] = useState(false);
   const linkBase = "font-ui-button text-ui-button transition-colors";
   const cls = (k: typeof active) =>
     active === k
       ? `${linkBase} text-primary border-b-2 border-primary pb-1`
       : `${linkBase} text-on-surface-variant hover:text-primary`;
+  const mobileLinkCls = (k: typeof active) =>
+    active === k
+      ? `${linkBase} text-primary`
+      : `${linkBase} text-on-surface-variant hover:text-primary`;
   return (
-    <header className="fixed top-0 w-full z-50 flex justify-between items-center px-margin-mobile md:px-margin-desktop py-4 bg-background/90 backdrop-blur-sm border-b-2 border-primary">
+    <header className="fixed top-0 w-full z-50 flex justify-between items-center px-margin-mobile md:px-margin-desktop py-4 bg-background/90 backdrop-blur-sm border-b-2 border-primary relative">
       <div className="flex items-center gap-6">
         <Link to="/" className="font-display text-[32px] md:text-display-lg font-extrabold text-primary tracking-tighter">
           Executives Club
@@ -68,10 +74,27 @@ export function SiteHeader({ active }: { active: "status" | "gatherings" | "noti
             Login
           </button>
         )}
-        <button className="lg:hidden p-2 text-primary" aria-label="Menu">
-          <Icon name="menu" />
+        <button
+          onClick={() => setMenuOpen((o) => !o)}
+          aria-label={menuOpen ? "Close menu" : "Menu"}
+          aria-expanded={menuOpen}
+          className="lg:hidden p-2 text-primary"
+        >
+          <Icon name={menuOpen ? "close" : "menu"} />
         </button>
       </div>
+      {menuOpen && (
+        <nav
+          aria-label="Mobile navigation"
+          className="lg:hidden absolute top-full left-0 w-full flex flex-col gap-1 border-b-2 border-primary bg-background px-margin-mobile py-4 animate-in fade-in slide-in-from-top-2 duration-[220ms] ease-club"
+        >
+          <Link to="/" className={`${mobileLinkCls("status")} py-2`} onClick={() => setMenuOpen(false)}>Hall Status</Link>
+          <Link to="/hall" className={`${mobileLinkCls("gatherings")} py-2`} onClick={() => setMenuOpen(false)}>Book Hall</Link>
+          <Link to="/#notices" className={`${mobileLinkCls("notice")} py-2`} onClick={() => setMenuOpen(false)}>Notice Board</Link>
+          <Link to="/#gallery" className={`${mobileLinkCls("gallery")} py-2`} onClick={() => setMenuOpen(false)}>Gallery</Link>
+          <Link to="/#contacts" className={`${mobileLinkCls("contacts")} py-2`} onClick={() => setMenuOpen(false)}>Contacts</Link>
+        </nav>
+      )}
     </header>
   );
 }

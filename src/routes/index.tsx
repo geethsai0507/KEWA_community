@@ -83,9 +83,9 @@ function Home() {
 
       <main className="pt-24">
         {/* Hero */}
-        <section className="bg-primary text-on-primary min-h-[870px] flex flex-col md:flex-row items-stretch overflow-hidden relative">
+        <section className="bg-primary text-on-primary min-h-[870px] flex flex-col lg:flex-row items-stretch overflow-hidden relative">
           <div className="flex-1 flex flex-col justify-center px-margin-mobile md:px-margin-desktop py-s-xl z-10">
-            <h1 className="hero-headline font-display text-display-lg-mobile md:text-display-lg mb-8 max-w-2xl">
+            <h1 className="hero-headline font-display text-display-lg-mobile lg:text-display-lg mb-8 max-w-2xl">
               A neighborhood for everyone.
             </h1>
             <div className="hero-btns flex flex-wrap gap-4" style={{ animationDelay: "0.3s" }}>
@@ -178,7 +178,7 @@ function Home() {
           <h2 className="font-headline text-headline-lg mb-s-lg text-primary flex items-center gap-4">
             <Icon name="campaign" className="text-4xl" /> Notice Board
           </h2>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-margin-desktop">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-margin-desktop">
             <div>
               <h3 className="font-label-md text-label-md text-on-surface-variant uppercase mb-6 flex items-center gap-2">
                 <Icon name="push_pin" className="text-tertiary" /> Pinned Notices

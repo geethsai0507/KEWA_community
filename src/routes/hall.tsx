@@ -190,7 +190,7 @@ function BookingPanel({ seed }: { seed: { venue: string; date: string } | null }
   );
 
   return (
-    <div className="flex flex-col lg:flex-row gap-s-lg">
+    <div className="flex flex-col md:flex-row gap-s-lg">
       <div className="flex-grow space-y-s-lg">
         <nav className="flex items-center gap-4 text-sm font-bold uppercase tracking-tighter overflow-x-auto pb-2">
           {(["1. Details", "2. Payment", "3. Confirmation"] as const).map((label, i) => (
@@ -374,7 +374,7 @@ function BookingPanel({ seed }: { seed: { venue: string; date: string } | null }
         )}
       </div>
 
-      <aside className="w-full lg:w-80 shrink-0">
+      <aside className="w-full md:w-64 lg:w-80 shrink-0">
         <div className="sticky top-32 brutalist-card bg-surface p-6 space-y-6">
           <h3 className="font-headline text-headline-md text-primary border-b-2 border-primary pb-2 uppercase tracking-tighter">Fee</h3>
           <div className="font-headline text-headline-lg text-primary leading-none">
