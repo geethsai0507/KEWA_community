@@ -56,6 +56,16 @@ const gatherings = [
     cta: "More Info",
     img: "https://lh3.googleusercontent.com/aida-public/AB6AXuBZIUWQz55b72MwjLESvlMt4DgIRYQES_ljF9WIittrHLt7qfu0guqKvCpUj7o7av6pgzaE-y79poflsUM2ujSZkgUXZGDErJzotlcsdx7rbowLlz48GTqml6rNgtneqILHAmWCZxPQcijtllWPKFDSkHgfKp3j8hjBlXyae-b3RVIjUy1rrn8SwbpnjILg8JQ9dR_hLZGzHqiT_KnKNCS_gKFSujjdDv6P67QL_MJajzKOD-xJ5Vv0VOFZBaambCc0LCcTpdl7xLY",
   },
+  {
+    tag: "Sports",
+    tagBg: "bg-tertiary text-on-tertiary",
+    title: "Billiards Tournament",
+    time: "05:00 PM",
+    place: "Games Room",
+    cta: "Register",
+    // TODO: placeholder photo (reused from the Meeting card) until a real event photo is provided.
+    img: "https://lh3.googleusercontent.com/aida-public/AB6AXuAwYuIa0in5x2rOtX5gvxIo9J3vAIe2SYWgKX58x5ibQAMIiI7gfZY2OvBmQD5Ev7fDfm-sjmX7w4QM0SlaBAVla5bUI5D1VUgJdp8OwNuAnfRp7pKol9g6Q6l-9JDJWkK2SXt0jyWARLFIGc70cMt7imr9xhd9eZXcvGBvsWp40EDUd34iMVxN_PBgN-af3FdRSyTW35CaETXtIUsX0lzrmLSuH0C-7JEZXeRyduJOWiNpsGIMSpEJB9XB3MwbBMNiwvdjfkmsurA",
+  },
 ];
 
 const gallery = [
