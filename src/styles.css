@@ -3,6 +3,16 @@
 @import "tw-animate-css";
 
 @custom-variant dark (&:is(.dark *));
+/* True mouse/trackpad devices only — touch has no persistent hover, so
+   effects gated behind plain `hover:` (e.g. reveal-on-hover) would stay
+   stuck in their pre-hover state on phones/tablets with no way to trigger
+   them. Use this instead of `hover:` for anything that WITHHOLDS content
+   until hovered (decorative hover lifts/glows are fine as plain `hover:`). */
+@custom-variant hoverable {
+  @media (hover: hover) and (pointer: fine) {
+    @slot;
+  }
+}
 
 @theme {
   --font-display: "Playfair Display", serif;

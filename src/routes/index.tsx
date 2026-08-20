@@ -234,7 +234,7 @@ function Home() {
               {gallery.map((g, i) => (
                 <Reveal key={i} delayMs={(i % 3) * 90} className="mb-4">
                   <div className={`brutalist-card overflow-hidden ${g.h} relative group`}>
-                    <img className="w-full h-full object-cover grayscale hover:grayscale-0 transition-all duration-700" alt="Community moment" src={g.src} />
+                    <img className="w-full h-full object-cover hoverable:grayscale hoverable:hover:grayscale-0 transition-all duration-700" alt="Community moment" src={g.src} />
                   </div>
                 </Reveal>
               ))}
