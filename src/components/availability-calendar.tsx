@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "@tanstack/react-router";
-import { subscribeToCalendar, dayColorFor, dayStatusLabel, type DayStatus } from "@/lib/hall/calendar";
+import { subscribeToCalendar, dayColorFor, dayStatusLabel, isPastDate, type DayStatus } from "@/lib/hall/calendar";
 import { useUnmountDelay } from "@/hooks/use-unmount-delay";
 
 type DayEntry = { Morning: DayStatus; Evening: DayStatus };
@@ -11,11 +11,17 @@ function worstStatus(entry: DayEntry): DayStatus {
   return PRIORITY.find((s) => entry.Morning === s || entry.Evening === s) ?? "available";
 }
 
-const CELL_BG: Record<"red" | "yellow" | "green", string> = {
+const CELL_BG: Record<"red" | "yellow" | "green" | "grey", string> = {
   red: "bg-tertiary/70 text-on-tertiary",
   yellow: "bg-warning/70 text-on-warning",
   green: "bg-secondary/35 text-on-surface",
+  grey: "bg-outline-variant/60 text-on-surface-variant",
 };
+
+function todayDateStr(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
 
 export function AvailabilityCalendar({
   venue,
@@ -45,13 +51,15 @@ export function AvailabilityCalendar({
   const month = cursor.getMonth();
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const firstWeekday = new Date(year, month, 1).getDay();
+  const todayStr = todayDateStr();
 
   const dayCell = (day: number) => {
     const dateStr = `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
     const entry = byDate[dateStr] ?? { Morning: "available" as DayStatus, Evening: "available" as DayStatus };
-    const color = dayColorFor(worstStatus(entry));
+    const past = isPastDate(dateStr, todayStr);
+    const color = past ? "grey" : dayColorFor(worstStatus(entry));
     const cellClass = `${CELL_BG[color]} ${compact ? "min-h-[44px] text-sm" : "min-h-[96px]"} p-2 flex items-start justify-start font-bold rounded-lg w-full text-left`;
-    const title = `Morning: ${entry.Morning}, Evening: ${entry.Evening}`;
+    const title = past ? "Past" : `Morning: ${entry.Morning}, Evening: ${entry.Evening}`;
 
     if (compact) {
       return (
@@ -86,7 +94,9 @@ export function AvailabilityCalendar({
     </div>
   );
 
-  const canBook = displayed ? displayed.entry.Morning === "available" || displayed.entry.Evening === "available" : false;
+  const canBook = displayed
+    ? !isPastDate(displayed.date, todayStr) && (displayed.entry.Morning === "available" || displayed.entry.Evening === "available")
+    : false;
 
   return (
     <div className="brutalist-card space-y-4 bg-surface-container p-6">
@@ -116,6 +126,7 @@ export function AvailabilityCalendar({
         <span className="flex items-center gap-1"><span className={`h-3 w-3 rounded-full ${CELL_BG.green}`}></span> Free</span>
         <span className="flex items-center gap-1"><span className={`h-3 w-3 rounded-full ${CELL_BG.yellow}`}></span> Pending</span>
         <span className="flex items-center gap-1"><span className={`h-3 w-3 rounded-full ${CELL_BG.red}`}></span> Booked</span>
+        <span className="flex items-center gap-1"><span className={`h-3 w-3 rounded-full ${CELL_BG.grey}`}></span> Past</span>
       </div>
 
       {showPopup && displayed && (

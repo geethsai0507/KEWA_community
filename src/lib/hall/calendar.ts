@@ -11,6 +11,10 @@ export function dayColorFor(status: DayStatus): "red" | "yellow" | "green" {
   return "red"; // confirmed | held | blocked
 }
 
+export function isPastDate(dateStr: string, todayStr: string): boolean {
+  return dateStr < todayStr;
+}
+
 export function dayStatusLabel(status: DayStatus): string {
   switch (status) {
     case "available":

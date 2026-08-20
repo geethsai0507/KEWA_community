@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { dayColorFor, dayStatusLabel, type DayStatus } from "./calendar";
+import { dayColorFor, dayStatusLabel, isPastDate, type DayStatus } from "./calendar";
 
 describe("dayColorFor", () => {
   it("shows green for available", () => {
@@ -46,5 +46,21 @@ describe("dayStatusLabel", () => {
     for (const s of statuses) {
       expect(dayStatusLabel(s).length).toBeGreaterThan(0);
     }
+  });
+});
+
+describe("isPastDate", () => {
+  it("returns true for a date before today", () => {
+    expect(isPastDate("2026-08-19", "2026-08-20")).toBe(true);
+  });
+  it("returns false for today", () => {
+    expect(isPastDate("2026-08-20", "2026-08-20")).toBe(false);
+  });
+  it("returns false for a date after today", () => {
+    expect(isPastDate("2026-08-21", "2026-08-20")).toBe(false);
+  });
+  it("compares across month/year boundaries correctly", () => {
+    expect(isPastDate("2025-12-31", "2026-01-01")).toBe(true);
+    expect(isPastDate("2026-01-01", "2025-12-31")).toBe(false);
   });
 });
