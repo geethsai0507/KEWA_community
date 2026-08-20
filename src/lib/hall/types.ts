@@ -36,7 +36,6 @@ export interface BookingDoc extends BookingSlotDoc {
   duration: string;
   utr: string | null;
   amount: number;
-  isMember: boolean;
   cancelledBy: "user" | "admin" | null;
   approvedBy: string | null;
   approvedAt: Timestamp | null;

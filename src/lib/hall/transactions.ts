@@ -40,7 +40,6 @@ export interface CreateBookingInput {
   slot: Slot;
   purpose: string;
   duration: string;
-  isMember: boolean;
 }
 
 export interface CreateBookingResult {
@@ -76,7 +75,7 @@ export async function createBooking(input: CreateBookingInput): Promise<CreateBo
 
   const bookingNumber = generateBookingNumber();
   const lookupToken = generateLookupToken();
-  const amount = calculateBookingFee(input.isMember, input.venue);
+  const amount = calculateBookingFee(input.venue);
 
   const status = await runTransaction(db, async (tx) => {
     // Both reads happen on known, deterministic document references — this is what makes
@@ -132,7 +131,6 @@ export async function createBooking(input: CreateBookingInput): Promise<CreateBo
       duration: input.duration,
       utr: null,
       amount,
-      isMember: input.isMember,
       cancelledBy: null,
       approvedBy: null,
       approvedAt: null,
