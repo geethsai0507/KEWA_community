@@ -141,6 +141,61 @@
   --color-foreground: #f3ead8;
 }
 
+/* Light theme: dark (above) is the default; adding .light to <html> overrides
+   the neutral surface/text axis and the gold primary (both used as bare
+   foreground text throughout the site, so they need contrast-safe light
+   variants). Secondary, tertiary and warning are deliberately left
+   unchanged — they're only ever used as self-contained bg+matching-text
+   pairs, so keeping them constant preserves the brand's accent identity
+   across both themes instead of diluting it. */
+:root.light {
+  --color-background: #f7f2e6;
+  --color-on-background: #241f16;
+  --color-surface: #f7f2e6;
+  --color-surface-bright: #fffcf5;
+  --color-surface-dim: #e6dcc3;
+  --color-surface-variant: #ece1c8;
+  --color-surface-tint: #8a6b1e;
+  --color-surface-container: #fbf6ea;
+  --color-surface-container-low: #fdfaf2;
+  --color-surface-container-lowest: #ffffff;
+  --color-surface-container-high: #f2e9d4;
+  --color-surface-container-highest: #ecdfc0;
+  --color-on-surface: #241f16;
+  --color-on-surface-variant: #5c5240;
+  --color-inverse-surface: #241f16;
+  --color-inverse-on-surface: #f7f2e6;
+
+  --color-primary: #8a6b1e;
+  --color-on-primary: #fffaf0;
+  --color-primary-container: #f2e2b6;
+  --color-on-primary-container: #4a3710;
+
+  --color-error: #b3261e;
+  --color-on-error: #ffffff;
+  --color-error-container: #f9dedc;
+  --color-on-error-container: #410e0b;
+
+  --color-success: #1f7a4d;
+
+  --color-outline: #7d735c;
+  --color-outline-variant: #d8cca8;
+  --color-border: #e2d6b3;
+  --color-input: #e2d6b3;
+  --color-ring: #8a6b1e;
+  --color-card: #fbf6ea;
+  --color-card-foreground: #241f16;
+  --color-popover: #fbf6ea;
+  --color-popover-foreground: #241f16;
+  --color-muted: #f2e9d4;
+  --color-muted-foreground: #5c5240;
+  --color-accent: #f2e9d4;
+  --color-accent-foreground: #241f16;
+  --color-destructive: #b3261e;
+  --color-destructive-foreground: #ffffff;
+  --color-foreground: #241f16;
+}
+
 .material-symbols-outlined {
   font-variation-settings: "FILL" 0, "wght" 400, "GRAD" 0, "opsz" 24;
   vertical-align: middle;
@@ -189,7 +244,7 @@ details > summary::-webkit-details-marker { display: none; }
 @media (prefers-reduced-motion: reduce) {
   .hero-headline, .hero-btns, .hero-img,
   .animate-in, .animate-out,
-  .brutalist-button, .brutalist-card {
+  .brutalist-button, .brutalist-card, body {
     animation: none !important;
     transition: none !important;
   }
@@ -208,4 +263,5 @@ body {
   background-color: var(--color-background);
   color: var(--color-on-background);
   font-family: var(--font-body);
+  transition: background-color var(--duration-club-slow) var(--ease-club), color var(--duration-club-slow) var(--ease-club);
 }

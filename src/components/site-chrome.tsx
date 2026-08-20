@@ -1,5 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import { useAuth } from "@/components/auth-context";
+import { useTheme } from "@/components/theme-context";
 
 export function Icon({ name, className = "" }: { name: string; className?: string }) {
   return <span className={`material-symbols-outlined ${className}`}>{name}</span>;
@@ -7,6 +8,7 @@ export function Icon({ name, className = "" }: { name: string; className?: strin
 
 export function SiteHeader({ active }: { active: "status" | "gatherings" | "notice" | "gallery" | "contacts" }) {
   const { verified, empId, requireLogin, logout } = useAuth();
+  const { theme, toggleTheme } = useTheme();
   const linkBase = "font-ui-button text-ui-button transition-colors";
   const cls = (k: typeof active) =>
     active === k
@@ -35,6 +37,13 @@ export function SiteHeader({ active }: { active: "status" | "gatherings" | "noti
         </div>
         <button className="p-2 hover:bg-surface-container transition-colors text-primary" aria-label="Search">
           <Icon name="search" />
+        </button>
+        <button
+          onClick={toggleTheme}
+          aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+          className="p-2 rounded-full hover:bg-surface-container transition-colors text-primary"
+        >
+          <Icon name={theme === "dark" ? "light_mode" : "dark_mode"} />
         </button>
         {verified ? (
           <div className="hidden sm:flex items-center gap-2 rounded-full border border-outline-variant bg-surface-container px-3 py-1.5">

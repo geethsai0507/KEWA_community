@@ -10,7 +10,10 @@ import {
 import type { ReactNode } from "react";
 
 import { AuthProvider } from "@/components/auth-context";
+import { ThemeProvider, THEME_STORAGE_KEY } from "@/components/theme-context";
 import appCss from "../styles.css?url";
+
+const THEME_INIT_SCRIPT = `try{if(localStorage.getItem(${JSON.stringify(THEME_STORAGE_KEY)})==="light"){document.documentElement.classList.add("light")}}catch(e){}`;
 
 function NotFoundComponent() {
   return (
@@ -113,6 +116,7 @@ function RootShell({ children }: { children: ReactNode }) {
   return (
     <html lang="en">
       <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
         <HeadContent />
       </head>
       <body>
@@ -128,9 +132,11 @@ function RootComponent() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <AuthProvider>
-        <Outlet />
-      </AuthProvider>
+      <ThemeProvider>
+        <AuthProvider>
+          <Outlet />
+        </AuthProvider>
+      </ThemeProvider>
     </QueryClientProvider>
   );
 }
