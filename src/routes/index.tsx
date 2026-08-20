@@ -25,9 +25,6 @@ export const Route = createFileRoute("/")({
   component: Home,
 });
 
-const HERO_IMG =
-  "https://images.unsplash.com/photo-1780402411700-96a84f2f483a?fm=jpg&q=80&w=2000";
-
 const gatherings = [
   {
     tag: "Wellness",
@@ -94,12 +91,12 @@ function Home() {
 
       <main className="pt-24">
         {/* Hero */}
-        <section className="bg-primary text-on-primary min-h-[870px] flex flex-col lg:flex-row items-stretch overflow-hidden relative">
-          <div className="flex-1 flex flex-col justify-center px-margin-mobile md:px-margin-desktop py-s-xl z-10">
+        <section className="bg-primary text-on-primary min-h-[500px] flex flex-col items-center justify-center text-center overflow-hidden relative">
+          <div className="flex flex-col items-center px-margin-mobile md:px-margin-desktop py-s-xl z-10">
             <h1 className="hero-headline font-display text-display-lg-mobile lg:text-display-lg mb-8 max-w-2xl">
               A neighborhood for everyone.
             </h1>
-            <div className="hero-btns flex flex-wrap gap-4" style={{ animationDelay: "0.3s" }}>
+            <div className="hero-btns flex flex-wrap justify-center gap-4" style={{ animationDelay: "0.3s" }}>
               {!verified && (
                 <button
                   onClick={() => requireLogin()}
@@ -120,18 +117,6 @@ function Home() {
               >
                 See what's on
               </a>
-            </div>
-          </div>
-          <div className="flex-1 relative min-h-[400px]">
-            <div className="absolute inset-0 overflow-hidden">
-              <img
-                className="hero-img w-full h-full object-cover"
-                alt="Executives Club community hall building illuminated at night"
-                src={HERO_IMG}
-              />
-            </div>
-            <div className="absolute bottom-0 right-0 w-32 h-32 md:w-64 md:h-64 bg-tertiary-container z-20 flex items-center justify-center">
-              <Icon name="celebration" className="text-on-tertiary-container text-6xl md:text-8xl" />
             </div>
           </div>
         </section>

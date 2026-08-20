@@ -216,7 +216,6 @@ details > summary::-webkit-details-marker { display: none; }
 
 .hero-headline { animation: rise 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
 .hero-btns { animation: fade 1.2s ease-out forwards; opacity: 0; }
-.hero-img { animation: scaleImg 20s infinite alternate linear; }
 
 @keyframes rise {
   from { transform: translateY(40px); opacity: 0; }
@@ -225,10 +224,6 @@ details > summary::-webkit-details-marker { display: none; }
 @keyframes fade {
   from { opacity: 0; transform: translateY(10px); }
   to { opacity: 1; transform: translateY(0); }
-}
-@keyframes scaleImg {
-  from { transform: scale(1); }
-  to { transform: scale(1.1); }
 }
 
 .brutalist-card {
@@ -252,7 +247,7 @@ details > summary::-webkit-details-marker { display: none; }
 .brutalist-button:active { transform: scale(0.95); }
 
 @media (prefers-reduced-motion: reduce) {
-  .hero-headline, .hero-btns, .hero-img,
+  .hero-headline, .hero-btns,
   .animate-in, .animate-out,
   .brutalist-button, .brutalist-card, body {
     animation: none !important;
