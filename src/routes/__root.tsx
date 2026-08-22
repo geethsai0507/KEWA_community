@@ -9,8 +9,11 @@ import {
 } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 
-import { SiteGate } from "@/components/site-gate";
+import { AuthProvider } from "@/components/auth-context";
+import { ThemeProvider, THEME_STORAGE_KEY } from "@/components/theme-context";
 import appCss from "../styles.css?url";
+
+const THEME_INIT_SCRIPT = `try{if(localStorage.getItem(${JSON.stringify(THEME_STORAGE_KEY)})==="light"){document.documentElement.classList.add("light")}}catch(e){}`;
 
 function NotFoundComponent() {
   return (
@@ -83,7 +86,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       {
         property: "og:description",
         content:
-          "A neighborhood for everyone. Check the community hall, RSVP to gatherings, and stay in the loop.",
+          "Exclusive amenities and events for members. Check the community hall, RSVP to gatherings, and stay in the loop.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
@@ -95,7 +98,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
       {
         rel: "stylesheet",
-        href: "https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@700;800&family=Inter:wght@400;600;700&display=swap",
+        href: "https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;800&family=Inter:wght@400;600;700&display=swap",
       },
       {
         rel: "stylesheet",
@@ -113,6 +116,7 @@ function RootShell({ children }: { children: ReactNode }) {
   return (
     <html lang="en">
       <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
         <HeadContent />
       </head>
       <body>
@@ -128,9 +132,11 @@ function RootComponent() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <SiteGate>
-        <Outlet />
-      </SiteGate>
+      <ThemeProvider>
+        <AuthProvider>
+          <Outlet />
+        </AuthProvider>
+      </ThemeProvider>
     </QueryClientProvider>
   );
 }

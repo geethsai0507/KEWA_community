@@ -1,13 +1,14 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
 import { Icon, SiteHeader, SiteFooter } from "@/components/site-chrome";
 import { VENUES } from "@/lib/hall/constants";
-import { subscribeToCalendar, type DayStatus } from "@/lib/hall/calendar";
+import { AvailabilityCalendar } from "@/components/availability-calendar";
+import { useAuth } from "@/components/auth-context";
+import { Reveal } from "@/components/reveal";
 
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "Executives Club Community Portal — A neighborhood for everyone" },
+      { title: "Executives Club Community Portal — Exclusive Amenities & Events for Members" },
       {
         name: "description",
         content:
@@ -17,15 +18,12 @@ export const Route = createFileRoute("/")({
       {
         property: "og:description",
         content:
-          "A neighborhood for everyone. Check the hall, RSVP to gatherings and stay connected.",
+          "Exclusive amenities and events for members. Check the hall, RSVP to gatherings and stay connected.",
       },
     ],
   }),
   component: Home,
 });
-
-const HERO_IMG =
-  "https://images.unsplash.com/photo-1780402411700-96a84f2f483a?fm=jpg&q=80&w=2000";
 
 const gatherings = [
   {
@@ -55,6 +53,17 @@ const gatherings = [
     cta: "More Info",
     img: "https://lh3.googleusercontent.com/aida-public/AB6AXuBZIUWQz55b72MwjLESvlMt4DgIRYQES_ljF9WIittrHLt7qfu0guqKvCpUj7o7av6pgzaE-y79poflsUM2ujSZkgUXZGDErJzotlcsdx7rbowLlz48GTqml6rNgtneqILHAmWCZxPQcijtllWPKFDSkHgfKp3j8hjBlXyae-b3RVIjUy1rrn8SwbpnjILg8JQ9dR_hLZGzHqiT_KnKNCS_gKFSujjdDv6P67QL_MJajzKOD-xJ5Vv0VOFZBaambCc0LCcTpdl7xLY",
   },
+  {
+    tag: "Sports",
+    tagBg: "bg-tertiary text-on-tertiary",
+    title: "Billiards Tournament",
+    time: "Date TBA",
+    place: "Games Room",
+    cta: "Stay Tuned",
+    img: "/images/billiards-tournament.png",
+    // Poster's headline sits near the top; bias the crop up so it stays in frame at h-48.
+    imgPosition: "50% 30%",
+  },
 ];
 
 const gallery = [
@@ -73,88 +82,32 @@ const contacts = [
   { title: "Electrician / Lift", sub: "Emergency Maintenance", icon: "bolt", hover: "hover:bg-on-surface hover:text-white" },
 ];
 
-function toDateStr(d: Date) {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-
-function summarizeDay(day: { Morning: DayStatus; Evening: DayStatus } | undefined) {
-  const morning = day?.Morning ?? "available";
-  const evening = day?.Evening ?? "available";
-  if (morning === "available" && evening === "available") {
-    return { dot: "bg-[#1E4D12]", text: "Available all day" };
-  }
-  if (morning !== "available" && evening !== "available") {
-    return { dot: "bg-error", text: morning === "blocked" || evening === "blocked" ? "Blocked" : "Fully booked" };
-  }
-  const freeSlot = morning === "available" ? "Morning" : "Evening";
-  return { dot: "bg-secondary-container", text: `Partially available (${freeSlot} free)` };
-}
-
-function HallAvailabilityWidget() {
-  const venue = VENUES[0].name;
-  const [byDate, setByDate] = useState<Record<string, { Morning: DayStatus; Evening: DayStatus }>>({});
-
-  const today = new Date();
-  const tomorrow = new Date(today);
-  tomorrow.setDate(today.getDate() + 1);
-  const dayAfter = new Date(today);
-  dayAfter.setDate(today.getDate() + 2);
-  const targets = [today, tomorrow, dayAfter];
-
-  useEffect(() => {
-    // Subscribe to every distinct (year, month) the 3 target days span, so this still works
-    // correctly across a month boundary (e.g. today is the last day of the month).
-    const months = new Set(targets.map((d) => `${d.getFullYear()}-${d.getMonth()}`));
-    const unsubscribes = Array.from(months).map((key) => {
-      const [year, month] = key.split("-").map(Number);
-      return subscribeToCalendar(venue, year, month, (monthData) => {
-        setByDate((prev) => ({ ...prev, ...monthData }));
-      });
-    });
-    return () => unsubscribes.forEach((u) => u());
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [venue, toDateStr(today)]);
-
-  const labels = ["Today", "Tomorrow", targets[2].toLocaleDateString("en-IN", { weekday: "long" })];
-
-  return (
-    <div className="grid grid-cols-1 md:grid-cols-3 gap-gutter">
-      {targets.map((d, i) => {
-        const dateStr = toDateStr(d);
-        const { dot, text } = summarizeDay(byDate[dateStr]);
-        return (
-          <div key={dateStr} className="brutalist-card p-6 bg-white flex flex-col gap-4">
-            <div className="flex justify-between items-start">
-              <span className="font-label-md text-label-md text-on-surface-variant uppercase">{labels[i]}</span>
-              <span className={`w-3 h-3 rounded-full ${dot}`}></span>
-            </div>
-            <div className="font-headline text-headline-md">
-              {d.toLocaleDateString("en-IN", { month: "short", day: "numeric" })}
-            </div>
-            <p className="font-body text-body-md text-on-surface-variant">{text}</p>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
 
 function Home() {
+  const { verified, requireLogin } = useAuth();
   return (
     <div className="bg-background text-on-background">
       <SiteHeader active="status" />
 
       <main className="pt-24">
         {/* Hero */}
-        <section className="bg-primary text-on-primary min-h-[870px] flex flex-col md:flex-row items-stretch overflow-hidden relative">
-          <div className="flex-1 flex flex-col justify-center px-margin-mobile md:px-margin-desktop py-s-xl z-10">
-            <h1 className="hero-headline font-display text-display-lg-mobile md:text-display-lg mb-8 max-w-2xl">
-              A neighborhood for everyone.
+        <section className="bg-primary text-on-primary min-h-[500px] flex flex-col items-center justify-center text-center overflow-hidden relative">
+          <div className="flex flex-col items-center px-margin-mobile md:px-margin-desktop py-s-xl z-10">
+            <h1 className="hero-headline font-display text-display-lg-mobile lg:text-display-lg mb-8 max-w-2xl">
+              Exclusive Amenities & Events for Members
             </h1>
-            <div className="hero-btns flex flex-wrap gap-4" style={{ animationDelay: "0.3s" }}>
+            <div className="hero-btns flex flex-wrap justify-center gap-4" style={{ animationDelay: "0.3s" }}>
+              {!verified && (
+                <button
+                  onClick={() => requireLogin()}
+                  className="bg-on-primary text-primary font-ui-button text-ui-button px-8 py-4 uppercase tracking-widest hover:bg-primary-container hover:text-on-primary-container transition-all duration-[220ms] ease-club hover:-translate-y-0.5 hover:shadow-[0_10px_24px_-10px_rgba(0,0,0,0.35)] active:scale-95"
+                >
+                  Login to your Account
+                </button>
+              )}
               <Link
                 to="/hall"
-                className="bg-secondary-container text-on-secondary-fixed font-ui-button text-ui-button px-8 py-4 uppercase tracking-widest hover:bg-tertiary-container hover:text-on-tertiary transition-all active:scale-95"
+                className="bg-secondary-container text-on-secondary-fixed font-ui-button text-ui-button px-8 py-4 uppercase tracking-widest hover:bg-tertiary-container hover:text-on-tertiary transition-all duration-[220ms] ease-club hover:-translate-y-0.5 hover:shadow-[0_10px_24px_-10px_rgba(201,162,75,0.5)] active:scale-95"
               >
                 Check hall availability
               </Link>
@@ -164,18 +117,6 @@ function Home() {
               >
                 See what's on
               </a>
-            </div>
-          </div>
-          <div className="flex-1 relative min-h-[400px]">
-            <div className="absolute inset-0 overflow-hidden">
-              <img
-                className="hero-img w-full h-full object-cover"
-                alt="Executives Club community hall building illuminated at night"
-                src={HERO_IMG}
-              />
-            </div>
-            <div className="absolute bottom-0 right-0 w-32 h-32 md:w-64 md:h-64 bg-tertiary-container z-20 flex items-center justify-center">
-              <Icon name="celebration" className="text-on-tertiary-container text-6xl md:text-8xl" />
             </div>
           </div>
         </section>
@@ -188,7 +129,7 @@ function Home() {
               View full calendar <Icon name="arrow_forward" />
             </Link>
           </div>
-          <HallAvailabilityWidget />
+          <AvailabilityCalendar venue={VENUES[0].name} compact />
         </section>
 
         {/* Gatherings */}
@@ -203,10 +144,16 @@ function Home() {
               </p>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
-              {gatherings.map((g) => (
-                <div key={g.title} className="group relative bg-white brutalist-card overflow-hidden hover:-translate-y-2 transition-transform duration-300">
+              {gatherings.map((g, i) => (
+                <Reveal key={g.title} delayMs={i * 90}>
+                <div className="group relative bg-white brutalist-card overflow-hidden hover:-translate-y-2 transition-transform duration-300">
                   <div className="h-48 bg-surface-variant overflow-hidden">
-                    <img className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" alt={g.title} src={g.img} />
+                    <img
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                      style={g.imgPosition ? { objectPosition: g.imgPosition } : undefined}
+                      alt={g.title}
+                      src={g.img}
+                    />
                   </div>
                   <div className="p-6">
                     <span className={`inline-block font-label-md text-label-md px-3 py-1 mb-4 uppercase ${g.tagBg}`}>{g.tag}</span>
@@ -221,6 +168,7 @@ function Home() {
                     </button>
                   </div>
                 </div>
+                </Reveal>
               ))}
             </div>
           </div>
@@ -231,7 +179,7 @@ function Home() {
           <h2 className="font-headline text-headline-lg mb-s-lg text-primary flex items-center gap-4">
             <Icon name="campaign" className="text-4xl" /> Notice Board
           </h2>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-margin-desktop">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-margin-desktop">
             <div>
               <h3 className="font-label-md text-label-md text-on-surface-variant uppercase mb-6 flex items-center gap-2">
                 <Icon name="push_pin" className="text-tertiary" /> Pinned Notices
@@ -285,9 +233,11 @@ function Home() {
           <div className="px-margin-mobile md:px-margin-desktop">
             <div className="masonry-grid">
               {gallery.map((g, i) => (
-                <div key={i} className={`mb-4 brutalist-card overflow-hidden ${g.h} relative group`}>
-                  <img className="w-full h-full object-cover grayscale hover:grayscale-0 transition-all duration-700" alt="Community moment" src={g.src} />
-                </div>
+                <Reveal key={i} delayMs={(i % 3) * 90} className="mb-4">
+                  <div className={`brutalist-card overflow-hidden ${g.h} relative group`}>
+                    <img className="w-full h-full object-cover hoverable:grayscale hoverable:hover:grayscale-0 transition-all duration-700" alt="Community moment" src={g.src} />
+                  </div>
+                </Reveal>
               ))}
             </div>
           </div>

@@ -5,6 +5,31 @@ import type { BookingStatus, Slot } from "./types";
 
 export type DayStatus = "available" | "confirmed" | "pending" | "held" | "blocked";
 
+export function dayColorFor(status: DayStatus): "red" | "yellow" | "green" {
+  if (status === "pending") return "yellow";
+  if (status === "available") return "green";
+  return "red"; // confirmed | held | blocked
+}
+
+export function isPastDate(dateStr: string, todayStr: string): boolean {
+  return dateStr < todayStr;
+}
+
+export function dayStatusLabel(status: DayStatus): string {
+  switch (status) {
+    case "available":
+      return "Free";
+    case "pending":
+      return "Pending Approval";
+    case "confirmed":
+      return "Booked";
+    case "held":
+      return "Payment in Progress";
+    case "blocked":
+      return "Blocked";
+  }
+}
+
 interface SlotLike {
   status: BookingStatus;
   expiresAt: { toMillis(): number } | null;

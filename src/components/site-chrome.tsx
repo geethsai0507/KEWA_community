@@ -1,17 +1,27 @@
+import { useState } from "react";
 import { Link } from "@tanstack/react-router";
+import { useAuth } from "@/components/auth-context";
+import { useTheme } from "@/components/theme-context";
 
 export function Icon({ name, className = "" }: { name: string; className?: string }) {
   return <span className={`material-symbols-outlined ${className}`}>{name}</span>;
 }
 
 export function SiteHeader({ active }: { active: "status" | "gatherings" | "notice" | "gallery" | "contacts" }) {
+  const { verified, empId, requireLogin, logout } = useAuth();
+  const { theme, toggleTheme } = useTheme();
+  const [menuOpen, setMenuOpen] = useState(false);
   const linkBase = "font-ui-button text-ui-button transition-colors";
   const cls = (k: typeof active) =>
     active === k
       ? `${linkBase} text-primary border-b-2 border-primary pb-1`
       : `${linkBase} text-on-surface-variant hover:text-primary`;
+  const mobileLinkCls = (k: typeof active) =>
+    active === k
+      ? `${linkBase} text-primary`
+      : `${linkBase} text-on-surface-variant hover:text-primary`;
   return (
-    <header className="fixed top-0 w-full z-50 flex justify-between items-center px-margin-mobile md:px-margin-desktop py-4 bg-background/90 backdrop-blur-sm border-b-2 border-primary">
+    <header className="fixed top-0 w-full z-50 flex justify-between items-center px-margin-mobile md:px-margin-desktop py-4 bg-background/90 backdrop-blur-sm border-b-2 border-primary relative">
       <div className="flex items-center gap-6">
         <Link to="/" className="font-display text-[32px] md:text-display-lg font-extrabold text-primary tracking-tighter">
           Executives Club
@@ -25,19 +35,66 @@ export function SiteHeader({ active }: { active: "status" | "gatherings" | "noti
         </nav>
       </div>
       <div className="flex items-center gap-4">
-        <div className="hidden sm:flex items-center bg-[#D1FFBD] px-4 py-1.5 rounded-full border-2 border-[#1E4D12]">
-          <span className="w-2 h-2 bg-[#1E4D12] rounded-full mr-2 animate-pulse"></span>
-          <span className="text-[12px] font-bold text-[#1E4D12] uppercase tracking-wider">
+        <div className="hidden sm:flex items-center bg-secondary/20 px-4 py-1.5 rounded-full border border-secondary">
+          <span className="w-2 h-2 bg-secondary rounded-full mr-2 animate-pulse"></span>
+          <span className="text-[12px] font-bold text-secondary uppercase tracking-wider">
             Hall free until 6 pm
           </span>
         </div>
         <button className="p-2 hover:bg-surface-container transition-colors text-primary" aria-label="Search">
           <Icon name="search" />
         </button>
-        <button className="lg:hidden p-2 text-primary" aria-label="Menu">
-          <Icon name="menu" />
+        <button
+          onClick={toggleTheme}
+          aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+          className="p-2 rounded-full hover:bg-surface-container transition-colors text-primary"
+        >
+          <Icon name={theme === "dark" ? "light_mode" : "dark_mode"} />
+        </button>
+        {verified ? (
+          <div className="hidden sm:flex items-center gap-2 rounded-full border border-outline-variant bg-surface-container px-3 py-1.5">
+            <Icon name="account_circle" className="text-primary text-xl" />
+            <span className="text-[12px] font-bold uppercase tracking-wider text-on-surface">
+              Employee {empId}
+            </span>
+            <button
+              onClick={logout}
+              aria-label="Log out"
+              className="ml-1 text-on-surface-variant hover:text-error transition-colors"
+            >
+              <Icon name="logout" className="text-base" />
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={() => requireLogin()}
+            className="hidden sm:flex items-center gap-2 rounded-full border border-primary bg-primary px-4 py-1.5 font-ui-button text-[12px] font-bold uppercase tracking-wider text-on-primary hover:bg-primary-container transition-all duration-[220ms] ease-club hover:-translate-y-0.5 hover:shadow-[0_8px_18px_-8px_rgba(201,162,75,0.5)]"
+          >
+            <Icon name="account_circle" className="text-base" />
+            Login
+          </button>
+        )}
+        <button
+          onClick={() => setMenuOpen((o) => !o)}
+          aria-label={menuOpen ? "Close menu" : "Menu"}
+          aria-expanded={menuOpen}
+          className="lg:hidden p-2 text-primary"
+        >
+          <Icon name={menuOpen ? "close" : "menu"} />
         </button>
       </div>
+      {menuOpen && (
+        <nav
+          aria-label="Mobile navigation"
+          className="lg:hidden absolute top-full left-0 w-full flex flex-col gap-1 border-b-2 border-primary bg-background px-margin-mobile py-4 animate-in fade-in slide-in-from-top-2 duration-[220ms] ease-club"
+        >
+          <Link to="/" className={`${mobileLinkCls("status")} py-2`} onClick={() => setMenuOpen(false)}>Hall Status</Link>
+          <Link to="/hall" className={`${mobileLinkCls("gatherings")} py-2`} onClick={() => setMenuOpen(false)}>Book Hall</Link>
+          <Link to="/#notices" className={`${mobileLinkCls("notice")} py-2`} onClick={() => setMenuOpen(false)}>Notice Board</Link>
+          <Link to="/#gallery" className={`${mobileLinkCls("gallery")} py-2`} onClick={() => setMenuOpen(false)}>Gallery</Link>
+          <Link to="/#contacts" className={`${mobileLinkCls("contacts")} py-2`} onClick={() => setMenuOpen(false)}>Contacts</Link>
+        </nav>
+      )}
     </header>
   );
 }

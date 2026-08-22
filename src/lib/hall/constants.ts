@@ -1,8 +1,8 @@
 export const VENUES = [
-  { name: "Executives Club Community Hall", feeMember: 500, feeNonMember: 1000 },
-  { name: "Shopping Complex Room", feeMember: 200, feeNonMember: 500 },
-  { name: "Multi Purpose Room", feeMember: 500, feeNonMember: 1000 },
-  { name: "Other", feeMember: 200, feeNonMember: 500 },
+  { name: "Executives Club Community Hall", feeMember: 500 },
+  { name: "Shopping Complex Room", feeMember: 200 },
+  { name: "Multi Purpose Room", feeMember: 500 },
+  { name: "Other", feeMember: 200 },
 ] as const;
 
 export const SLOTS: Record<"Morning" | "Evening", { label: string; time: string }> = {
