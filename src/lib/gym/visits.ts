@@ -65,7 +65,9 @@ export function decideScanAction(memberVisits: GymVisit[], now: Date): ScanDecis
     return { kind: "ignore", last: last.kind, at: last.at };
   }
 
-  const open = memberVisits.filter((v) => v.status === "open").sort((a, b) => b.inAt.getTime() - a.inAt.getTime());
+  const open = memberVisits
+    .filter((v) => v.status === "open")
+    .sort((a, b) => b.inAt.getTime() - a.inAt.getTime());
   const latest = open[0];
   if (latest) {
     const age = minutesBetween(latest.inAt, now);
@@ -73,5 +75,8 @@ export function decideScanAction(memberVisits: GymVisit[], now: Date): ScanDecis
       return { kind: "check-out", visit: latest, overCap: age > MAX_VISIT_MINUTES };
     }
   }
-  return { kind: "check-in", staleOpen: open.filter((v) => minutesBetween(v.inAt, now) > STALE_VISIT_MINUTES) };
+  return {
+    kind: "check-in",
+    staleOpen: open.filter((v) => minutesBetween(v.inAt, now) > STALE_VISIT_MINUTES),
+  };
 }

@@ -11,10 +11,16 @@ export const Route = createFileRoute("/gym/scan")({
   component: GymScanPage,
 });
 
-const MISMATCH_COPY = "This member's gym check-ins are linked to another phone — ask an admin to reset.";
-const OVER_CAP_COPY = "This visit was over 3 hours, so it's counted as a missed check-out. Just arriving? Scan again to check in.";
+const MISMATCH_COPY =
+  "This member's gym check-ins are linked to another phone — ask an admin to reset.";
+const OVER_CAP_COPY =
+  "This visit was over 3 hours, so it's counted as a missed check-out. Just arriving? Scan again to check in.";
 
-type State = { kind: "idle" } | { kind: "running" } | { kind: "done"; result: ScanResult } | { kind: "error" };
+type State =
+  | { kind: "idle" }
+  | { kind: "running" }
+  | { kind: "done"; result: ScanResult }
+  | { kind: "error" };
 
 function GymScanPage() {
   const { verified, empId, requireLogin, logout } = useAuth();
@@ -55,11 +61,15 @@ function GymScanPage() {
     <div className="bg-background text-on-background min-h-screen flex flex-col">
       <SiteHeader active="gym" />
       <main className="pt-32 pb-s-xl px-margin-mobile md:px-margin-desktop flex-1 w-full max-w-xl mx-auto">
-        <p className="font-ui-button text-ui-button uppercase tracking-widest text-on-surface-variant mb-2">Gym check-in</p>
+        <p className="font-ui-button text-ui-button uppercase tracking-widest text-on-surface-variant mb-2">
+          Gym check-in
+        </p>
 
         {(!verified || !empId) && (
           <div className="brutalist-card bg-surface-container p-8 space-y-6 text-center">
-            <h1 className="font-headline text-headline-lg text-primary">Log in to record your gym visit</h1>
+            <h1 className="font-headline text-headline-lg text-primary">
+              Log in to record your gym visit
+            </h1>
             <button
               onClick={() => requireLogin()}
               className="w-full bg-primary text-on-primary font-ui-button text-ui-button px-8 py-4 uppercase tracking-widest"
@@ -73,7 +83,8 @@ function GymScanPage() {
           <div className="brutalist-card bg-surface-container p-8 space-y-6 text-center">
             {state.kind === "done" && (
               <p className="text-sm text-on-surface-variant">
-                Recording for <strong className="text-on-background">{state.result.displayName}</strong> —{" "}
+                Recording for{" "}
+                <strong className="text-on-background">{state.result.displayName}</strong> —{" "}
                 <button onClick={switchMember} className="underline text-primary">
                   Not you? Switch
                 </button>
@@ -86,7 +97,9 @@ function GymScanPage() {
 
             {state.kind === "error" && (
               <>
-                <h1 className="font-headline text-headline-lg text-error">Something went wrong, try again.</h1>
+                <h1 className="font-headline text-headline-lg text-error">
+                  Something went wrong, try again.
+                </h1>
                 <button
                   onClick={() => void run(empId)}
                   className="w-full bg-primary text-on-primary font-ui-button text-ui-button px-8 py-4 uppercase tracking-widest"
@@ -123,8 +136,12 @@ function ResultView({ result }: { result: ScanResult }) {
       return (
         <>
           <Icon name="login" className="text-6xl text-primary" />
-          <h1 className="font-display text-display-lg-mobile text-primary">Checked in at {formatIstTime(result.at)}</h1>
-          <p className="text-on-surface-variant">Today so far: {formatMinutes(result.todayMinutes)}</p>
+          <h1 className="font-display text-display-lg-mobile text-primary">
+            Checked in at {formatIstTime(result.at)}
+          </h1>
+          <p className="text-on-surface-variant">
+            Today so far: {formatMinutes(result.todayMinutes)}
+          </p>
         </>
       );
     case "checked-out":
@@ -143,7 +160,8 @@ function ResultView({ result }: { result: ScanResult }) {
       return (
         <>
           <h1 className="font-headline text-headline-lg text-primary">
-            You already {result.last === "check-in" ? "checked in" : "checked out"} at {formatIstTime(result.at)}
+            You already {result.last === "check-in" ? "checked in" : "checked out"} at{" "}
+            {formatIstTime(result.at)}
           </h1>
           <p className="text-on-surface-variant">{formatMinutes(result.todayMinutes)} today</p>
         </>

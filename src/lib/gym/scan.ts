@@ -17,7 +17,8 @@ export type ScanOutcome =
 
 export type ScanResult = ScanOutcome & { displayName: string };
 
-const todayMinutes = (visits: GymVisit[], now: Date) => memberDayTotals(visits, now).get(istDayKey(now)) ?? 0;
+const todayMinutes = (visits: GymVisit[], now: Date) =>
+  memberDayTotals(visits, now).get(istDayKey(now)) ?? 0;
 
 /** Records one QR scan for this member on this phone: check-in, check-out, or ignore a double scan. */
 export async function performScan(empId: string, deviceId: string): Promise<ScanResult> {
@@ -33,7 +34,13 @@ export async function performScan(empId: string, deviceId: string): Promise<Scan
 
   if (decision.kind === "ignore") {
     const visits = await fetchMemberVisitsForScan(memberHash, now);
-    return { kind: "ignored", last: decision.last, at: decision.at, todayMinutes: todayMinutes(visits, now), displayName };
+    return {
+      kind: "ignored",
+      last: decision.last,
+      at: decision.at,
+      todayMinutes: todayMinutes(visits, now),
+      displayName,
+    };
   }
 
   if (decision.kind === "check-out") {
@@ -42,14 +49,29 @@ export async function performScan(empId: string, deviceId: string): Promise<Scan
     const visits = await fetchMemberVisitsForScan(memberHash, after);
     const closed = visits.find((v) => v.id === decision.visit.id);
     const minutes =
-      decision.overCap || !closed?.outAt ? 0 : Math.floor((closed.outAt.getTime() - closed.inAt.getTime()) / 60_000);
-    return { kind: "checked-out", minutes, overCap: decision.overCap, todayMinutes: todayMinutes(visits, after), displayName };
+      decision.overCap || !closed?.outAt
+        ? 0
+        : Math.floor((closed.outAt.getTime() - closed.inAt.getTime()) / 60_000);
+    return {
+      kind: "checked-out",
+      minutes,
+      overCap: decision.overCap,
+      todayMinutes: todayMinutes(visits, after),
+      displayName,
+    };
   }
 
   for (const stale of decision.staleOpen) await closeVisit(stale.id, "no-logout");
   await checkIn(memberHash, displayName);
   const after = new Date();
   const visits = await fetchMemberVisitsForScan(memberHash, after);
-  const open = visits.filter((v) => v.status === "open").sort((a, b) => b.inAt.getTime() - a.inAt.getTime())[0];
-  return { kind: "checked-in", at: open?.inAt ?? after, todayMinutes: todayMinutes(visits, after), displayName };
+  const open = visits
+    .filter((v) => v.status === "open")
+    .sort((a, b) => b.inAt.getTime() - a.inAt.getTime())[0];
+  return {
+    kind: "checked-in",
+    at: open?.inAt ?? after,
+    todayMinutes: todayMinutes(visits, after),
+    displayName,
+  };
 }

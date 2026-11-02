@@ -38,7 +38,10 @@ export async function getMemberDisplayName(memberHash: string): Promise<string> 
   return (snap.exists() && (snap.data().displayName as string | undefined)) || "Member";
 }
 
-export async function ensureDeviceLink(memberHash: string, deviceId: string): Promise<"ok" | "mismatch"> {
+export async function ensureDeviceLink(
+  memberHash: string,
+  deviceId: string,
+): Promise<"ok" | "mismatch"> {
   const ref = doc(db, DEVICES, memberHash);
   const snap = await getDoc(ref);
   if (!snap.exists()) {
@@ -76,7 +79,10 @@ export function fetchMemberMonthVisits(memberHash: string, monthKey: string): Pr
 
 export function fetchMonthVisits(monthKey: string): Promise<GymVisit[]> {
   const { start, end } = istMonthRange(monthKey);
-  return runVisitQuery(where("inAt", ">=", Timestamp.fromDate(start)), where("inAt", "<", Timestamp.fromDate(end)));
+  return runVisitQuery(
+    where("inAt", ">=", Timestamp.fromDate(start)),
+    where("inAt", "<", Timestamp.fromDate(end)),
+  );
 }
 
 export async function checkIn(memberHash: string, displayName: string): Promise<void> {

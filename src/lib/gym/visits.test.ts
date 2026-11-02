@@ -89,15 +89,26 @@ describe("decideScanAction", () => {
   });
   it("starts a fresh check-in when yesterday's visit was never closed", () => {
     const stale = visit(ist("2026-11-01T07:00"), null);
-    expect(decideScanAction([stale], ist("2026-11-02T07:00"))).toEqual({ kind: "check-in", staleOpen: [stale] });
+    expect(decideScanAction([stale], ist("2026-11-02T07:00"))).toEqual({
+      kind: "check-in",
+      staleOpen: [stale],
+    });
   });
   it("checks out a 190-minute visit as over the cap", () => {
     const open = visit(minsAfter(now, -190), null);
-    expect(decideScanAction([open], now)).toEqual({ kind: "check-out", visit: open, overCap: true });
+    expect(decideScanAction([open], now)).toEqual({
+      kind: "check-out",
+      visit: open,
+      overCap: true,
+    });
   });
   it("checks out a 59-minute visit normally", () => {
     const open = visit(minsAfter(now, -59), null);
-    expect(decideScanAction([open], now)).toEqual({ kind: "check-out", visit: open, overCap: false });
+    expect(decideScanAction([open], now)).toEqual({
+      kind: "check-out",
+      visit: open,
+      overCap: false,
+    });
   });
   it("checks in when the open visit is over 6 hours old", () => {
     const open = visit(minsAfter(now, -361), null);
@@ -105,7 +116,11 @@ describe("decideScanAction", () => {
   });
   it("ignores a scan 60 seconds after checking in", () => {
     const inAt = new Date(now.getTime() - 60_000);
-    expect(decideScanAction([visit(inAt, null)], now)).toEqual({ kind: "ignore", last: "check-in", at: inAt });
+    expect(decideScanAction([visit(inAt, null)], now)).toEqual({
+      kind: "ignore",
+      last: "check-in",
+      at: inAt,
+    });
   });
   it("ignores a scan 30 seconds after checking out", () => {
     const outAt = new Date(now.getTime() - 30_000);

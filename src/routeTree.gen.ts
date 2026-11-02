@@ -15,6 +15,7 @@ import { Route as AdminRouteImport } from './routes/admin'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as HallStatusRouteImport } from './routes/hall.status'
 import { Route as GymScanRouteImport } from './routes/gym.scan'
+import { Route as GymLeaderboardRouteImport } from './routes/gym.leaderboard'
 
 const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
   id: '/sitemap.xml',
@@ -46,12 +47,18 @@ const GymScanRoute = GymScanRouteImport.update({
   path: '/gym/scan',
   getParentRoute: () => rootRouteImport,
 } as any)
+const GymLeaderboardRoute = GymLeaderboardRouteImport.update({
+  id: '/gym/leaderboard',
+  path: '/gym/leaderboard',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
   '/hall': typeof HallRouteWithChildren
   '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/gym/leaderboard': typeof GymLeaderboardRoute
   '/gym/scan': typeof GymScanRoute
   '/hall/status': typeof HallStatusRoute
 }
@@ -60,6 +67,7 @@ export interface FileRoutesByTo {
   '/admin': typeof AdminRoute
   '/hall': typeof HallRouteWithChildren
   '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/gym/leaderboard': typeof GymLeaderboardRoute
   '/gym/scan': typeof GymScanRoute
   '/hall/status': typeof HallStatusRoute
 }
@@ -69,6 +77,7 @@ export interface FileRoutesById {
   '/admin': typeof AdminRoute
   '/hall': typeof HallRouteWithChildren
   '/sitemap.xml': typeof SitemapDotxmlRoute
+  '/gym/leaderboard': typeof GymLeaderboardRoute
   '/gym/scan': typeof GymScanRoute
   '/hall/status': typeof HallStatusRoute
 }
@@ -79,16 +88,25 @@ export interface FileRouteTypes {
     | '/admin'
     | '/hall'
     | '/sitemap.xml'
+    | '/gym/leaderboard'
     | '/gym/scan'
     | '/hall/status'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/admin' | '/hall' | '/sitemap.xml' | '/gym/scan' | '/hall/status'
+  to:
+    | '/'
+    | '/admin'
+    | '/hall'
+    | '/sitemap.xml'
+    | '/gym/leaderboard'
+    | '/gym/scan'
+    | '/hall/status'
   id:
     | '__root__'
     | '/'
     | '/admin'
     | '/hall'
     | '/sitemap.xml'
+    | '/gym/leaderboard'
     | '/gym/scan'
     | '/hall/status'
   fileRoutesById: FileRoutesById
@@ -98,6 +116,7 @@ export interface RootRouteChildren {
   AdminRoute: typeof AdminRoute
   HallRoute: typeof HallRouteWithChildren
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
+  GymLeaderboardRoute: typeof GymLeaderboardRoute
   GymScanRoute: typeof GymScanRoute
 }
 
@@ -145,6 +164,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof GymScanRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/gym/leaderboard': {
+      id: '/gym/leaderboard'
+      path: '/gym/leaderboard'
+      fullPath: '/gym/leaderboard'
+      preLoaderRoute: typeof GymLeaderboardRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -163,6 +189,7 @@ const rootRouteChildren: RootRouteChildren = {
   AdminRoute: AdminRoute,
   HallRoute: HallRouteWithChildren,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
+  GymLeaderboardRoute: GymLeaderboardRoute,
   GymScanRoute: GymScanRoute,
 }
 export const routeTree = rootRouteImport
