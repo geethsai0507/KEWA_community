@@ -46,7 +46,14 @@ export function GymCard() {
   }, [memberHash]);
 
   return (
-    <div className="brutalist-card bg-surface-container p-6 flex flex-col gap-4 h-full">
+    <div className="brutalist-card bg-surface-container p-6 flex flex-col gap-4 h-full overflow-hidden">
+      {/* Photo: Jakub Żerdzicki on Unsplash (Unsplash License). */}
+      <img
+        src="/images/gym-equipment.jpg"
+        alt="Dumbbell rack in the club gym"
+        loading="lazy"
+        className="-mx-6 -mt-6 mb-0 w-[calc(100%+3rem)] max-w-none h-40 object-cover"
+      />
       <div className="flex items-center gap-3">
         <Icon name="fitness_center" className="text-3xl text-primary" />
         <h2 className="font-headline text-headline-lg text-primary">Gym</h2>
