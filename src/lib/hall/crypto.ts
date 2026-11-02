@@ -47,3 +47,8 @@ export async function hashEmployeeId(empId: string): Promise<string> {
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
 }
+
+/** Random per-phone id used to link a member's gym check-ins to one phone. */
+export function generateDeviceId(): string {
+  return randomHex(16);
+}
