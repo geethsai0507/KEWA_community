@@ -38,17 +38,13 @@ export async function getMemberDisplayName(memberHash: string): Promise<string> 
   return (snap.exists() && (snap.data().displayName as string | undefined)) || "Member";
 }
 
-export async function ensureDeviceLink(
-  memberHash: string,
-  deviceId: string,
-): Promise<"ok" | "mismatch"> {
-  const ref = doc(db, DEVICES, memberHash);
-  const snap = await getDoc(ref);
-  if (!snap.exists()) {
-    await setDoc(ref, { deviceId, linkedAt: serverTimestamp() });
-    return "ok";
-  }
-  return snap.data().deviceId === deviceId ? "ok" : "mismatch";
+export async function getLinkedDeviceId(memberHash: string): Promise<string | null> {
+  const snap = await getDoc(doc(db, DEVICES, memberHash));
+  return snap.exists() ? (snap.data().deviceId as string) : null;
+}
+
+export async function linkDevice(memberHash: string, deviceId: string): Promise<void> {
+  await setDoc(doc(db, DEVICES, memberHash), { deviceId, linkedAt: serverTimestamp() });
 }
 
 async function runVisitQuery(...constraints: Parameters<typeof query>[1][]): Promise<GymVisit[]> {

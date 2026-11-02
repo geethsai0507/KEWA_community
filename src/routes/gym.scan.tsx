@@ -28,10 +28,10 @@ function GymScanPage() {
   // The scan for a given login must run exactly once (StrictMode double-invokes effects).
   const scannedFor = useRef<string | null>(null);
 
-  const run = async (id: string) => {
+  const run = async (id: string, confirmLink = false) => {
     setState({ kind: "running" });
     try {
-      const result = await performScan(id, getOrCreateDeviceId(localStorage));
+      const result = await performScan(id, getOrCreateDeviceId(localStorage), confirmLink);
       setState({ kind: "done", result });
     } catch {
       setState({ kind: "error" });
@@ -53,8 +53,8 @@ function GymScanPage() {
   const switchMember = () => {
     scannedFor.current = null;
     setState({ kind: "idle" });
+    // logout() flips verified to false; the effect above then opens the login modal.
     logout();
-    requireLogin();
   };
 
   return (
@@ -112,7 +112,24 @@ function GymScanPage() {
               </>
             )}
 
-            {state.kind === "done" && <ResultView result={state.result} />}
+            {state.kind === "done" && state.result.kind === "confirm-link" ? (
+              <>
+                <h1 className="font-headline text-headline-lg text-primary">
+                  Record gym visits for {state.result.displayName} on this phone?
+                </h1>
+                <p className="text-sm text-on-surface-variant">
+                  First scan only — this links your gym check-ins to this phone.
+                </p>
+                <button
+                  onClick={() => void run(empId, true)}
+                  className="w-full bg-primary text-on-primary font-ui-button text-ui-button px-8 py-4 uppercase tracking-widest"
+                >
+                  Yes, that's me
+                </button>
+              </>
+            ) : (
+              state.kind === "done" && <ResultView result={state.result} />
+            )}
 
             <Link
               to="/gym/leaderboard"
@@ -130,6 +147,8 @@ function GymScanPage() {
 
 function ResultView({ result }: { result: ScanResult }) {
   switch (result.kind) {
+    case "confirm-link":
+      return null;
     case "device-mismatch":
       return <h1 className="font-headline text-headline-lg text-error">{MISMATCH_COPY}</h1>;
     case "checked-in":

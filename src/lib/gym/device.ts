@@ -9,3 +9,11 @@ export function getOrCreateDeviceId(storage: Pick<Storage, "getItem" | "setItem"
   storage.setItem(GYM_DEVICE_ID_KEY, id);
   return id;
 }
+
+export type DeviceLinkState = "ok" | "mismatch" | "unlinked";
+
+/** linkedDeviceId is the member's stored gym phone (null if they have never scanned). */
+export function deviceLinkState(linkedDeviceId: string | null, deviceId: string): DeviceLinkState {
+  if (linkedDeviceId === null) return "unlinked";
+  return linkedDeviceId === deviceId ? "ok" : "mismatch";
+}

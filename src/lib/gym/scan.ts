@@ -2,10 +2,12 @@ import { hashEmployeeId } from "@/lib/hall/crypto";
 import {
   checkIn,
   closeVisit,
-  ensureDeviceLink,
+  getLinkedDeviceId,
+  linkDevice,
   fetchMemberVisitsForScan,
   getMemberDisplayName,
 } from "./store";
+import { deviceLinkState } from "./device";
 import { istDayKey } from "./time";
 import { decideScanAction, memberDayTotals, type GymVisit } from "./visits";
 
@@ -13,7 +15,8 @@ export type ScanOutcome =
   | { kind: "checked-in"; at: Date; todayMinutes: number }
   | { kind: "checked-out"; minutes: number; overCap: boolean; todayMinutes: number }
   | { kind: "ignored"; last: "check-in" | "check-out"; at: Date; todayMinutes: number }
-  | { kind: "device-mismatch" };
+  | { kind: "device-mismatch" }
+  | { kind: "confirm-link" };
 
 export type ScanResult = ScanOutcome & { displayName: string };
 
@@ -21,12 +24,21 @@ const todayMinutes = (visits: GymVisit[], now: Date) =>
   memberDayTotals(visits, now).get(istDayKey(now)) ?? 0;
 
 /** Records one QR scan for this member on this phone: check-in, check-out, or ignore a double scan. */
-export async function performScan(empId: string, deviceId: string): Promise<ScanResult> {
+// confirmLink: the member has confirmed it's them. Required only for the first scan that links a
+// member to this phone, so a login left on a shared phone can't silently claim someone's link.
+export async function performScan(
+  empId: string,
+  deviceId: string,
+  confirmLink = false,
+): Promise<ScanResult> {
   const memberHash = await hashEmployeeId(empId);
   const displayName = await getMemberDisplayName(memberHash);
 
-  if ((await ensureDeviceLink(memberHash, deviceId)) === "mismatch") {
-    return { kind: "device-mismatch", displayName };
+  const link = deviceLinkState(await getLinkedDeviceId(memberHash), deviceId);
+  if (link === "mismatch") return { kind: "device-mismatch", displayName };
+  if (link === "unlinked") {
+    if (!confirmLink) return { kind: "confirm-link", displayName };
+    await linkDevice(memberHash, deviceId);
   }
 
   const now = new Date();

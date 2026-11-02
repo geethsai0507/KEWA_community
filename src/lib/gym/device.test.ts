@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { getOrCreateDeviceId, GYM_DEVICE_ID_KEY } from "./device";
+import { deviceLinkState, getOrCreateDeviceId, GYM_DEVICE_ID_KEY } from "./device";
 
 function memoryStorage() {
   const data = new Map<string, string>();
@@ -20,5 +20,17 @@ describe("getOrCreateDeviceId", () => {
   it("returns the same id on later calls", () => {
     const storage = memoryStorage();
     expect(getOrCreateDeviceId(storage)).toBe(getOrCreateDeviceId(storage));
+  });
+});
+
+describe("deviceLinkState", () => {
+  it("is unlinked when the member has no phone yet", () => {
+    expect(deviceLinkState(null, "abc")).toBe("unlinked");
+  });
+  it("is ok on the member's linked phone", () => {
+    expect(deviceLinkState("abc", "abc")).toBe("ok");
+  });
+  it("is a mismatch on any other phone", () => {
+    expect(deviceLinkState("abc", "xyz")).toBe("mismatch");
   });
 });
