@@ -318,6 +318,7 @@ function MembersTab() {
   return (
     <div className="space-y-4">
       <p className="text-sm opacity-70">Upload an Excel file with columns: empId, name, phone.</p>
+      <p className="text-sm opacity-70">Re-upload the member list once so leaderboard names appear.</p>
       <input
         type="file"
         accept=".xlsx,.xls"

@@ -28,11 +28,11 @@ export function useAuth(): AuthContextValue {
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [verified, setVerified] = useState(() => {
     if (typeof window === "undefined") return false;
-    return readGateSession((key) => sessionStorage.getItem(key));
+    return readGateSession((key) => localStorage.getItem(key));
   });
   const [empId, setEmpId] = useState<string | null>(() => {
     if (typeof window === "undefined") return null;
-    return readGateEmpId((key) => sessionStorage.getItem(key));
+    return readGateEmpId((key) => localStorage.getItem(key));
   });
   const [modalOpen, setModalOpen] = useState(false);
   const [inputValue, setInputValue] = useState("");
@@ -53,8 +53,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const logout = () => {
-    sessionStorage.removeItem(GATE_SESSION_KEY);
-    sessionStorage.removeItem(GATE_EMP_ID_KEY);
+    localStorage.removeItem(GATE_SESSION_KEY);
+    localStorage.removeItem(GATE_EMP_ID_KEY);
     setVerified(false);
     setEmpId(null);
   };
@@ -81,8 +81,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         inputRef.current?.focus();
         return;
       }
-      sessionStorage.setItem(GATE_SESSION_KEY, "1");
-      sessionStorage.setItem(GATE_EMP_ID_KEY, trimmed);
+      localStorage.setItem(GATE_SESSION_KEY, "1");
+      localStorage.setItem(GATE_EMP_ID_KEY, trimmed);
       setVerified(true);
       setEmpId(trimmed);
       setModalOpen(false);

@@ -152,7 +152,7 @@ interface BookingFormState {
 
 function emptyForm(seed?: { venue: string; date: string } | null): BookingFormState {
   return {
-    empId: typeof window === "undefined" ? "" : (readGateEmpId((key) => sessionStorage.getItem(key)) ?? ""),
+    empId: typeof window === "undefined" ? "" : (readGateEmpId((key) => localStorage.getItem(key)) ?? ""),
     name: "",
     phone: "",
     email: "",
