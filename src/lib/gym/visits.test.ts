@@ -130,6 +130,10 @@ describe("decideScanAction", () => {
       at: outAt,
     });
   });
+  it("checks in right after a visit was closed as a missed check-out", () => {
+    const v = visit(minsAfter(now, -240), new Date(now.getTime() - 20_000), "no-logout");
+    expect(decideScanAction([v], now)).toEqual({ kind: "check-in", staleOpen: [] });
+  });
   it("checks in again 3 minutes after checking out", () => {
     const v = visit(minsAfter(now, -40), minsAfter(now, -3));
     expect(decideScanAction([v], now)).toEqual({ kind: "check-in", staleOpen: [] });

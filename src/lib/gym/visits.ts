@@ -58,7 +58,9 @@ export function memberTotal(visits: GymVisit[], now: Date): number {
 export function decideScanAction(memberVisits: GymVisit[], now: Date): ScanDecision {
   let last: { at: Date; kind: "check-in" | "check-out" } | null = null;
   for (const v of memberVisits) {
-    const at = v.outAt ?? v.inAt;
+    // A missed-check-out close isn't a real exit; the member is told to scan again straight
+    // away to check in, so it must not trigger the double-scan guard.
+    const at = v.status === "no-logout" ? v.inAt : (v.outAt ?? v.inAt);
     if (!last || at > last.at) last = { at, kind: v.outAt ? "check-out" : "check-in" };
   }
   if (last && now.getTime() - last.at.getTime() < DOUBLE_SCAN_MS) {
