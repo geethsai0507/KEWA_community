@@ -95,35 +95,39 @@ function GymLeaderboardPage() {
         ) : rows.length === 0 ? (
           <p className="text-on-surface-variant">No gym time logged this month yet.</p>
         ) : (
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="border-b-2 border-primary font-ui-button text-ui-button uppercase text-on-surface-variant">
-                <th className="py-3 pr-2 w-12">#</th>
-                <th className="py-3 pr-2">Member</th>
-                <th className="py-3 pr-2 text-right">Time</th>
-                <th className="py-3 text-right">Visits</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r) => {
-                const mine = r.memberHash === memberHash;
-                return (
-                  <tr
-                    key={r.memberHash}
-                    className={`border-b border-outline-variant ${mine ? "bg-primary/15 font-bold" : ""}`}
-                  >
-                    <td className="py-3 pr-2 text-primary font-bold">{r.rank}</td>
-                    <td className="py-3 pr-2">
-                      {r.displayName}
-                      {mine && <span className="ml-2 text-xs uppercase text-primary">You</span>}
-                    </td>
-                    <td className="py-3 pr-2 text-right">{formatMinutes(r.minutes)}</td>
-                    <td className="py-3 text-right">{r.visits}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+          <div className="brutalist-card bg-surface-container overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="border-b-2 border-primary font-ui-button text-xs sm:text-sm uppercase tracking-wider text-on-surface-variant">
+                  <th className="py-3 pl-4 pr-2 w-12">#</th>
+                  <th className="py-3 px-2">Member</th>
+                  <th className="py-3 px-2 text-right">Time</th>
+                  <th className="py-3 pl-2 pr-4 text-right">Visits</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((r) => {
+                  const mine = r.memberHash === memberHash;
+                  return (
+                    <tr
+                      key={r.memberHash}
+                      className={`border-b border-outline-variant ${mine ? "bg-primary/15 font-bold" : ""}`}
+                    >
+                      <td className="py-3 pl-4 pr-2 text-primary font-bold">{r.rank}</td>
+                      <td className="py-3 px-2">
+                        {r.displayName}
+                        {mine && <span className="ml-2 text-xs uppercase text-primary">You</span>}
+                      </td>
+                      <td className="py-3 px-2 text-right whitespace-nowrap">
+                        {formatMinutes(r.minutes)}
+                      </td>
+                      <td className="py-3 pl-2 pr-4 text-right">{r.visits}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         )}
       </main>
       <SiteFooter />
