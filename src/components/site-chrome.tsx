@@ -7,7 +7,7 @@ export function Icon({ name, className = "" }: { name: string; className?: strin
   return <span className={`material-symbols-outlined ${className}`}>{name}</span>;
 }
 
-export function SiteHeader({ active }: { active: "status" | "gatherings" | "notice" | "gallery" | "contacts" }) {
+export function SiteHeader({ active }: { active: "status" | "gatherings" | "gym" | "notice" | "gallery" | "contacts" }) {
   const { verified, empId, requireLogin, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -29,6 +29,7 @@ export function SiteHeader({ active }: { active: "status" | "gatherings" | "noti
         <nav className="hidden lg:flex items-center gap-gutter">
           <Link to="/" className={cls("status")}>Hall Status</Link>
           <Link to="/hall" className={cls("gatherings")}>Book Hall</Link>
+          <Link to="/gym/leaderboard" className={cls("gym")}>Gym</Link>
           <Link to="/#notices" className={cls("notice")}>Notice Board</Link>
           <Link to="/#gallery" className={cls("gallery")}>Gallery</Link>
           <Link to="/#contacts" className={cls("contacts")}>Contacts</Link>
@@ -90,6 +91,7 @@ export function SiteHeader({ active }: { active: "status" | "gatherings" | "noti
         >
           <Link to="/" className={`${mobileLinkCls("status")} py-2`} onClick={() => setMenuOpen(false)}>Hall Status</Link>
           <Link to="/hall" className={`${mobileLinkCls("gatherings")} py-2`} onClick={() => setMenuOpen(false)}>Book Hall</Link>
+          <Link to="/gym/leaderboard" className={`${mobileLinkCls("gym")} py-2`} onClick={() => setMenuOpen(false)}>Gym</Link>
           <Link to="/#notices" className={`${mobileLinkCls("notice")} py-2`} onClick={() => setMenuOpen(false)}>Notice Board</Link>
           <Link to="/#gallery" className={`${mobileLinkCls("gallery")} py-2`} onClick={() => setMenuOpen(false)}>Gallery</Link>
           <Link to="/#contacts" className={`${mobileLinkCls("contacts")} py-2`} onClick={() => setMenuOpen(false)}>Contacts</Link>

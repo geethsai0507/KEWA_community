@@ -4,6 +4,7 @@ import { VENUES } from "@/lib/hall/constants";
 import { AvailabilityCalendar } from "@/components/availability-calendar";
 import { useAuth } from "@/components/auth-context";
 import { Reveal } from "@/components/reveal";
+import { GymCard } from "@/components/gym-card";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -123,13 +124,18 @@ function Home() {
 
         {/* Hall availability */}
         <section className="px-margin-mobile md:px-margin-desktop py-s-lg bg-surface">
-          <div className="flex flex-col md:flex-row gap-gutter justify-between items-end mb-s-lg">
-            <h2 className="font-headline text-headline-lg text-primary">Hall Availability</h2>
-            <Link to="/hall" className="font-ui-button text-ui-button text-primary flex items-center gap-2 hover:underline">
-              View full calendar <Icon name="arrow_forward" />
-            </Link>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-gutter">
+            <div className="lg:col-span-2 min-w-0">
+              <div className="flex flex-col md:flex-row gap-gutter justify-between items-end mb-s-lg">
+                <h2 className="font-headline text-headline-lg text-primary">Hall Availability</h2>
+                <Link to="/hall" className="font-ui-button text-ui-button text-primary flex items-center gap-2 hover:underline">
+                  View full calendar <Icon name="arrow_forward" />
+                </Link>
+              </div>
+              <AvailabilityCalendar venue={VENUES[0].name} compact />
+            </div>
+            <GymCard />
           </div>
-          <AvailabilityCalendar venue={VENUES[0].name} compact />
         </section>
 
         {/* Gatherings */}

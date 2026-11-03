@@ -7,6 +7,14 @@
         { "fieldPath": "venue", "order": "ASCENDING" },
         { "fieldPath": "date", "order": "ASCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "gymVisits",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "memberHash", "order": "ASCENDING" },
+        { "fieldPath": "inAt", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

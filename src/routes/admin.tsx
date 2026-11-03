@@ -10,13 +10,14 @@ import { VENUES } from "@/lib/hall/constants";
 import * as XLSX from "xlsx";
 import { uploadMembers } from "@/lib/hall/members";
 import { SiteHeader, SiteFooter } from "@/components/site-chrome";
+import { AdminGymTab } from "@/components/admin-gym-tab";
 import type { BookingDoc, BlockedDateDoc } from "@/lib/hall/types";
 
 export const Route = createFileRoute("/admin")({
   component: AdminPage,
 });
 
-type AdminTab = "pending-approval" | "pending-verification" | "all-bookings" | "blocked-dates" | "members" | "email-settings";
+type AdminTab = "pending-approval" | "pending-verification" | "all-bookings" | "blocked-dates" | "members" | "gym" | "email-settings";
 
 function AdminPage() {
   const [user, setUser] = useState<User | null>(null);
@@ -69,6 +70,7 @@ function AdminPage() {
     { id: "all-bookings", label: "All Bookings" },
     { id: "blocked-dates", label: "Blocked Dates" },
     { id: "members", label: "Members" },
+    { id: "gym", label: "Gym" },
     { id: "email-settings", label: "Email Settings" },
   ];
 
@@ -96,6 +98,7 @@ function AdminPage() {
         {tab === "all-bookings" && <AllBookingsTab />}
         {tab === "blocked-dates" && <BlockedDatesTab />}
         {tab === "members" && <MembersTab />}
+        {tab === "gym" && <AdminGymTab />}
         {tab === "email-settings" && <EmailSettingsTab />}
       </main>
       <SiteFooter />
@@ -318,6 +321,7 @@ function MembersTab() {
   return (
     <div className="space-y-4">
       <p className="text-sm opacity-70">Upload an Excel file with columns: empId, name, phone.</p>
+      <p className="text-sm opacity-70">Re-upload the member list once so leaderboard names appear.</p>
       <input
         type="file"
         accept=".xlsx,.xls"

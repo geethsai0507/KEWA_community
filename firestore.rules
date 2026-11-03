@@ -131,8 +131,14 @@ service cloud.firestore {
       allow get, list, create, update, delete: if isAdmin();
     }
 
+    // get-only for the public: the app only ever looks up one member by the hash of an ID the
+    // visitor typed. list is admin-only because each doc now carries a public displayName
+    // (gym leaderboard), and a listable hash->name table would let someone reverse the
+    // low-entropy hashes offline in bulk. Guessing IDs one get() at a time remains possible —
+    // an accepted limit of this server-less design (see crypto.ts).
     match /membersPublic/{memberId} {
-      allow get, list: if true;
+      allow get: if true;
+      allow list: if isAdmin();
       allow create, update, delete: if isAdmin();
     }
 
@@ -144,6 +150,47 @@ service cloud.firestore {
     match /settings/{settingId} {
       allow get, list: if true;
       allow create, update, delete: if isAdmin();
+    }
+
+    // ---- Gym check-in (friendly leaderboard) ----
+    // Members have no Firebase Auth identity, so these rules cannot prove WHO is scanning.
+    // What they do guarantee: timestamps are the server's clock (inAt/outAt == request.time,
+    // so a phone clock can't fake minutes), a visit can only move open -> closed/no-logout
+    // once and only touch status/outAt when it does, the displayName matches the member's
+    // public record, and only admins can delete or rewrite visits.
+    match /gymVisits/{visitId} {
+      allow get, list: if true;
+      allow create: if request.resource.data.keys().hasOnly(['memberHash', 'displayName', 'inAt', 'outAt', 'status'])
+        && request.resource.data.status == 'open'
+        && request.resource.data.inAt == request.time
+        && request.resource.data.outAt == null
+        && request.resource.data.memberHash is string
+        && get(/databases/$(database)/documents/membersPublic/$(request.resource.data.memberHash)).data.isMember == true
+        && request.resource.data.displayName
+             == get(/databases/$(database)/documents/membersPublic/$(request.resource.data.memberHash)).data.get('displayName', 'Member');
+      allow update: if isAdmin()
+        || (
+          resource.data.status == 'open'
+          && request.resource.data.status in ['closed', 'no-logout']
+          && request.resource.data.outAt == request.time
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'outAt'])
+        );
+      allow delete: if isAdmin();
+    }
+
+    // One gym phone per member (a phone may serve several members). Create-once; only an
+    // admin can reset it. The deviceId is publicly readable so the scan page can compare it,
+    // which means a determined user could copy it — accepted: this is a deterrent for a
+    // friendly leaderboard, not an identity check.
+    match /gymDevices/{memberHash} {
+      allow get: if true;
+      allow list: if isAdmin();
+      allow create: if request.resource.data.keys().hasOnly(['deviceId', 'linkedAt'])
+        && request.resource.data.deviceId is string
+        && request.resource.data.deviceId.size() >= 16
+        && request.resource.data.linkedAt == request.time
+        && exists(/databases/$(database)/documents/membersPublic/$(memberHash));
+      allow update, delete: if isAdmin();
     }
   }
 }

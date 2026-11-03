@@ -1,6 +1,7 @@
 import { doc, getDoc, writeBatch } from "firebase/firestore";
 import { db } from "./firebase";
 import { hashEmployeeId } from "./crypto";
+import { deriveDisplayName } from "@/lib/gym/display-name";
 
 export async function verifyMembership(empId: string): Promise<boolean> {
   const hash = await hashEmployeeId(empId);
@@ -23,7 +24,8 @@ export async function uploadMembers(rows: MemberRow[]): Promise<void> {
     const memberRef = doc(db, "members", hash);
     const publicRef = doc(db, "membersPublic", hash);
     batch.set(memberRef, { empId: row.empId, name: row.name, phone: row.phone });
-    batch.set(publicRef, { empIdHash: hash, isMember: true });
+    // displayName is public (gym leaderboard) — first name + last initial only, never ID or phone.
+    batch.set(publicRef, { empIdHash: hash, isMember: true, displayName: deriveDisplayName(String(row.name ?? "")) });
   }
   await batch.commit();
 }
